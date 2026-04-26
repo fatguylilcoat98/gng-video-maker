@@ -19,6 +19,23 @@ class VideoMaker {
             btnText: document.querySelector('.btn-text'),
             btnLoader: document.querySelector('.btn-loader'),
 
+            // Phase switcher
+            transcriptModeBtn: document.getElementById('transcriptModeBtn'),
+            videoModeBtn: document.getElementById('videoModeBtn'),
+            backToTranscriptBtn: document.getElementById('backToTranscriptBtn'),
+
+            // Phase 3: Video upload elements
+            videoUploadSection: document.getElementById('videoUploadSection'),
+            uploadSection: document.querySelector('.upload-section'),
+            videoUploadArea: document.getElementById('videoUploadArea'),
+            videoFileInput: document.getElementById('videoFileInput'),
+            videoUploadStatus: document.getElementById('videoUploadStatus'),
+            videoProgressFill: document.getElementById('videoProgressFill'),
+            videoStatusMessage: document.getElementById('videoStatusMessage'),
+            videoAnalysisResults: document.getElementById('videoAnalysisResults'),
+            analysisSummary: document.getElementById('analysisSummary'),
+            continueToProcessingBtn: document.getElementById('continueToProcessingBtn'),
+
             // Status elements
             statusSection: document.getElementById('statusSection'),
             progressFill: document.getElementById('progressFill'),
@@ -48,6 +65,8 @@ class VideoMaker {
         this.currentSegmentIndex = 0;
         this.isPlaying = false;
         this.currentJobId = null;
+        this.currentVideoAnalysis = null; // Phase 3
+        this.currentMode = 'transcript'; // 'transcript' or 'video'
 
         this.init();
     }
@@ -104,6 +123,32 @@ class VideoMaker {
         this.elements.exportScriptBtn.addEventListener('click', () => {
             this.exportScript();
         });
+
+        // Phase switcher events
+        this.elements.transcriptModeBtn.addEventListener('click', () => {
+            this.switchToTranscriptMode();
+        });
+
+        this.elements.videoModeBtn.addEventListener('click', () => {
+            this.switchToVideoMode();
+        });
+
+        this.elements.backToTranscriptBtn.addEventListener('click', () => {
+            this.switchToTranscriptMode();
+        });
+
+        // Phase 3: Video upload events
+        this.elements.videoUploadArea.addEventListener('click', () => {
+            this.elements.videoFileInput.click();
+        });
+
+        this.elements.videoFileInput.addEventListener('change', (e) => {
+            this.handleVideoUpload(e.target.files[0]);
+        });
+
+        this.elements.continueToProcessingBtn.addEventListener('click', () => {
+            this.continueToContentExtraction();
+        });
     }
 
     setupDragAndDrop() {
@@ -132,6 +177,195 @@ class VideoMaker {
                 this.handleFileSelect(files[0]);
             }
         });
+    }
+
+    setupVideoDragAndDrop() {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            this.elements.videoUploadArea.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            this.elements.videoUploadArea.addEventListener(eventName, () => {
+                this.elements.videoUploadArea.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            this.elements.videoUploadArea.addEventListener(eventName, () => {
+                this.elements.videoUploadArea.classList.remove('dragover');
+            });
+        });
+
+        this.elements.videoUploadArea.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                this.handleVideoUpload(files[0]);
+            }
+        });
+    }
+
+    // ============================================================================
+    // PHASE 3: VIDEO MODE FUNCTIONALITY
+    // ============================================================================
+
+    switchToTranscriptMode() {
+        this.currentMode = 'transcript';
+
+        // Update UI
+        this.elements.transcriptModeBtn.classList.add('active');
+        this.elements.videoModeBtn.classList.remove('active');
+
+        // Show/hide sections
+        this.elements.uploadSection.style.display = 'block';
+        this.elements.videoUploadSection.style.display = 'none';
+    }
+
+    switchToVideoMode() {
+        this.currentMode = 'video';
+
+        // Update UI
+        this.elements.videoModeBtn.classList.add('active');
+        this.elements.transcriptModeBtn.classList.remove('active');
+
+        // Show/hide sections
+        this.elements.uploadSection.style.display = 'none';
+        this.elements.videoUploadSection.style.display = 'block';
+
+        // Setup video drag and drop if not already done
+        if (!this.videoDragDropSetup) {
+            this.setupVideoDragAndDrop();
+            this.videoDragDropSetup = true;
+        }
+    }
+
+    async handleVideoUpload(file) {
+        if (!file) return;
+
+        // Validate file type
+        const allowedTypes = ['video/mp4', 'video/mov', 'video/webm', 'video/avi'];
+        if (!allowedTypes.includes(file.type)) {
+            this.showError('Please upload a video file (MP4, MOV, WebM, or AVI)');
+            return;
+        }
+
+        // Check file size (500MB limit)
+        const maxSize = 500 * 1024 * 1024; // 500MB in bytes
+        if (file.size > maxSize) {
+            this.showError('Video file too large. Please keep files under 500MB.');
+            return;
+        }
+
+        try {
+            // Show upload status
+            this.elements.videoUploadStatus.style.display = 'block';
+            this.elements.videoAnalysisResults.style.display = 'none';
+            this.updateVideoProgress(0, 'Uploading video...');
+
+            // Create form data
+            const formData = new FormData();
+            formData.append('video', file);
+
+            // Upload video
+            const response = await fetch('/upload-video', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`Upload failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+            this.currentJobId = result.job_id;
+
+            // Start polling for analysis results
+            this.pollVideoAnalysis();
+
+        } catch (error) {
+            console.error('Error uploading video:', error);
+            this.showError('Failed to upload video: ' + error.message);
+            this.elements.videoUploadStatus.style.display = 'none';
+        }
+    }
+
+    async pollVideoAnalysis() {
+        if (!this.currentJobId) return;
+
+        try {
+            const response = await fetch(`/video-analysis/${this.currentJobId}`);
+            const data = await response.json();
+
+            if (data.status === 'completed') {
+                this.currentVideoAnalysis = data.analysis;
+                this.displayVideoAnalysis(data.analysis);
+            } else if (data.status === 'failed') {
+                this.showError('Video analysis failed: ' + data.message);
+                this.elements.videoUploadStatus.style.display = 'none';
+            } else {
+                // Update progress and continue polling
+                this.updateVideoProgress(data.progress || 50, data.message || 'Analyzing video...');
+                setTimeout(() => this.pollVideoAnalysis(), 1000);
+            }
+
+        } catch (error) {
+            console.error('Error polling video analysis:', error);
+            this.showError('Failed to get analysis status');
+            this.elements.videoUploadStatus.style.display = 'none';
+        }
+    }
+
+    updateVideoProgress(progress, message) {
+        this.elements.videoProgressFill.style.width = progress + '%';
+        this.elements.videoStatusMessage.textContent = message;
+    }
+
+    displayVideoAnalysis(analysis) {
+        // Hide upload status, show results
+        this.elements.videoUploadStatus.style.display = 'none';
+        this.elements.videoAnalysisResults.style.display = 'block';
+
+        const videoInfo = analysis.video_info;
+        const sceneCount = analysis.scene_changes.length;
+        const silenceCount = analysis.silence_periods.length;
+
+        // Format duration
+        const minutes = Math.floor(videoInfo.duration / 60);
+        const seconds = Math.floor(videoInfo.duration % 60);
+
+        // Create analysis summary
+        this.elements.analysisSummary.innerHTML = `
+            <div class="analysis-item">
+                <span class="analysis-label">Duration:</span>
+                <span class="analysis-value">${minutes}:${seconds.toString().padStart(2, '0')}</span>
+            </div>
+            <div class="analysis-item">
+                <span class="analysis-label">Resolution:</span>
+                <span class="analysis-value">${videoInfo.width}×${videoInfo.height}</span>
+            </div>
+            <div class="analysis-item">
+                <span class="analysis-label">Scene Changes:</span>
+                <span class="analysis-value">${sceneCount} detected</span>
+            </div>
+            <div class="analysis-item">
+                <span class="analysis-label">Silence Periods:</span>
+                <span class="analysis-value">${silenceCount} detected</span>
+            </div>
+            <div class="analysis-item">
+                <span class="analysis-label">Audio:</span>
+                <span class="analysis-value">${videoInfo.has_audio ? 'Present' : 'Not detected'}</span>
+            </div>
+        `;
+
+        // Show continue button
+        this.elements.continueToProcessingBtn.style.display = 'block';
+    }
+
+    continueToContentExtraction() {
+        // Placeholder for next phase
+        alert('Phase 3 Step 3: Content Extraction coming next!');
     }
 
     async handleFileSelect(file) {

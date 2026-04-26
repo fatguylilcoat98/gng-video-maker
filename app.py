@@ -6,6 +6,7 @@ Truth · Safety · We Got Your Back
 """
 
 from flask import Flask, request, jsonify, send_from_directory, abort, send_file
+from werkzeug.utils import secure_filename
 from flask_cors import CORS
 import os
 import logging
@@ -348,6 +349,119 @@ def compose_video_endpoint():
 
     # Redirect to new video generation endpoint
     return generate_video_endpoint()
+
+# ============================================================================
+# PHASE 3: VIDEO UPLOAD AND ANALYSIS ENDPOINTS
+# ============================================================================
+
+def analyze_video_background(job_id, video_path):
+    """Background function to analyze uploaded video"""
+    try:
+        logger.info(f"Starting video analysis for job {job_id}")
+
+        processing_jobs[job_id]["progress"] = 20
+        processing_jobs[job_id]["message"] = "Analyzing video properties..."
+
+        # Import analyzer here to avoid startup issues
+        from modules.video_analyzer import analyze_uploaded_video
+
+        # Run video analysis
+        analysis_result = run_async_task(analyze_uploaded_video, video_path)
+
+        processing_jobs[job_id]["progress"] = 100
+        processing_jobs[job_id]["status"] = "completed"
+        processing_jobs[job_id]["message"] = "Video analysis complete!"
+        processing_jobs[job_id]["result"] = {
+            "analysis": analysis_result,
+            "video_path": video_path,
+            "phase": "analysis_complete"
+        }
+
+        logger.info(f"Video analysis completed for job {job_id}")
+
+    except Exception as e:
+        logger.error(f"Error analyzing video for job {job_id}: {str(e)}")
+        processing_jobs[job_id]["status"] = "failed"
+        processing_jobs[job_id]["message"] = f"Video analysis failed: {str(e)}"
+
+@app.route("/upload-video", methods=["POST"])
+def upload_video_endpoint():
+    """Phase 3: Upload and analyze video file"""
+
+    if 'video' not in request.files:
+        abort(400, "No video file uploaded")
+
+    file = request.files['video']
+    if file.filename == '':
+        abort(400, "No file selected")
+
+    # Validate file type
+    allowed_extensions = {'.mp4', '.mov', '.webm', '.avi'}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+
+    if file_ext not in allowed_extensions:
+        abort(400, f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}")
+
+    try:
+        # Save uploaded file
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        safe_filename = f"{timestamp}_{filename}"
+
+        # Create upload directory
+        upload_dir = "static/uploads"
+        os.makedirs(upload_dir, exist_ok=True)
+
+        video_path = os.path.join(upload_dir, safe_filename)
+        file.save(video_path)
+
+        # Create analysis job
+        job_id = f"video_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+
+        # Initialize job tracking
+        processing_jobs[job_id] = create_processing_status(
+            job_id=job_id,
+            status="processing",
+            progress=0,
+            message="Video uploaded, starting analysis..."
+        )
+
+        # Start background analysis
+        thread = threading.Thread(
+            target=analyze_video_background,
+            args=(job_id, video_path)
+        )
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            "job_id": job_id,
+            "status": "processing",
+            "message": "Video uploaded successfully, analysis started",
+            "filename": safe_filename,
+            "analysis_url": f"/video-analysis/{job_id}"
+        })
+
+    except Exception as e:
+        logger.error(f"Error uploading video: {str(e)}")
+        abort(500, f"Video upload failed: {str(e)}")
+
+@app.route("/video-analysis/<job_id>", methods=["GET"])
+def get_video_analysis(job_id):
+    """Get video analysis results"""
+    if job_id not in processing_jobs:
+        abort(404, "Analysis job not found")
+
+    job = processing_jobs[job_id]
+    if job["status"] != "completed":
+        # Return current status if not complete
+        return jsonify({
+            "status": job["status"],
+            "progress": job["progress"],
+            "message": job["message"]
+        })
+
+    return jsonify(job["result"])
 
 @app.route("/", methods=["GET"])
 def root():

@@ -30,6 +30,12 @@
                 <div class="header-subtitle">
                     <span class="good-neighbor">GOOD NEIGHBOR GUARD</span>
                 </div>
+
+                <!-- Phase Switcher -->
+                <div class="phase-switcher">
+                    <button id="transcriptModeBtn" class="phase-btn active">📄 Transcript Mode</button>
+                    <button id="videoModeBtn" class="phase-btn">🎬 Video Analysis (Phase 3)</button>
+                </div>
             </div>
         </header>
 
@@ -125,6 +131,45 @@
                                 </div>
                             </div>
                         </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Phase 3: Video Upload Section -->
+            <section class="video-upload-section" id="videoUploadSection" style="display: none;">
+                <div class="upload-card">
+                    <div class="upload-header">
+                        <h2 class="section-title">📹 Phase 3: Video Analysis</h2>
+                        <p class="section-subtitle">Upload screen recordings for automatic scene detection and analysis</p>
+                        <button id="backToTranscriptBtn" class="back-btn">← Back to Transcript Mode</button>
+                    </div>
+
+                    <div class="video-upload-form">
+                        <div class="video-upload-area" id="videoUploadArea">
+                            <div class="upload-content">
+                                <div class="upload-icon">🎬</div>
+                                <p class="upload-text">Drop your video here or click to browse</p>
+                                <p class="upload-hint">Supports MP4, MOV, WebM files • Max 500MB</p>
+                            </div>
+                            <input type="file" id="videoFileInput" accept=".mp4,.mov,.webm,.avi" style="display: none;">
+                        </div>
+
+                        <div class="video-upload-status" id="videoUploadStatus" style="display: none;">
+                            <div class="upload-progress">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="videoProgressFill" style="width: 0%;"></div>
+                                </div>
+                                <p class="status-message" id="videoStatusMessage">Analyzing video...</p>
+                            </div>
+                        </div>
+
+                        <div class="video-analysis-results" id="videoAnalysisResults" style="display: none;">
+                            <h3>Analysis Complete</h3>
+                            <div class="analysis-summary" id="analysisSummary"></div>
+                            <button id="continueToProcessingBtn" class="process-btn" style="display: none;">
+                                Continue to Content Extraction
+                            </button>
+                        </div>
                     </div>
                 </div>
             </section>
