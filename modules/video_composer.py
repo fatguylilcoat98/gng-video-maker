@@ -547,21 +547,20 @@ class VideoComposer:
                     segment_videos.append(segment_video)
 
                     # Create video from static image with audio
-                    cmd = (
-                        ffmpeg
-                        .input(frame_path, loop=1, t=duration)
-                        .input(audio_path)
-                        .output(
-                            segment_video,
-                            vcodec='libx264',
-                            acodec='aac',
-                            pix_fmt='yuv420p',
-                            r=VIDEO_FPS,
-                            s=f'{self.width}x{self.height}',
-                            shortest=None
-                        )
-                        .overwrite_output()
-                    )
+                    # Handle multiple inputs properly
+                    video_input = ffmpeg.input(frame_path, loop=1, t=duration)
+                    audio_input = ffmpeg.input(audio_path)
+
+                    cmd = ffmpeg.output(
+                        video_input, audio_input,
+                        segment_video,
+                        vcodec='libx264',
+                        acodec='aac',
+                        pix_fmt='yuv420p',
+                        r=VIDEO_FPS,
+                        s=f'{self.width}x{self.height}',
+                        shortest=None
+                    ).overwrite_output()
 
                     self.run_ffmpeg_command_safe(cmd, f"Segment {i+1} video creation")
 
