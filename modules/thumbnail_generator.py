@@ -157,8 +157,39 @@ class ThumbnailGenerator:
 
         return current_y
 
-    def create_gng_logo_placeholder(self, x: int, y: int, size: int) -> Image.Image:
-        """Create a simple GNG logo placeholder"""
+    def load_gng_logo(self, size: int) -> Image.Image:
+        """Load and resize the actual GNG logo"""
+        try:
+            # Path to the actual GNG logo
+            logo_path = "static/gng-logo.png"
+
+            # Check if logo exists
+            if os.path.exists(logo_path):
+                # Load the actual logo
+                logo_img = Image.open(logo_path).convert('RGBA')
+
+                # Resize maintaining aspect ratio
+                logo_img.thumbnail((size, size), Image.Resampling.LANCZOS)
+
+                # Create a square canvas and center the logo
+                final_logo = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+                logo_w, logo_h = logo_img.size
+                paste_x = (size - logo_w) // 2
+                paste_y = (size - logo_h) // 2
+                final_logo.paste(logo_img, (paste_x, paste_y), logo_img)
+
+                return final_logo
+
+            else:
+                # Fallback to placeholder if logo not found
+                return self.create_placeholder_logo(size)
+
+        except Exception as e:
+            logger.warning(f"Failed to load GNG logo: {e}, using placeholder")
+            return self.create_placeholder_logo(size)
+
+    def create_placeholder_logo(self, size: int) -> Image.Image:
+        """Create a simple GNG logo placeholder as fallback"""
         logo_img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
         logo_draw = ImageDraw.Draw(logo_img)
 
@@ -231,7 +262,7 @@ class ThumbnailGenerator:
                 )
 
             # Add GNG logo
-            logo = self.create_gng_logo_placeholder(logo_x, logo_y, self.logo_size)
+            logo = self.load_gng_logo(self.logo_size)
             img.paste(logo, (logo_x, logo_y), logo)
 
             # Add decorative elements

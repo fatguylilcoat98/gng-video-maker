@@ -12,6 +12,8 @@ import uuid
 from typing import List, Dict, Any
 from datetime import datetime
 import asyncio
+import subprocess
+import shutil
 
 import ffmpeg
 from PIL import Image, ImageDraw, ImageFont
@@ -56,6 +58,85 @@ class VideoComposer:
             self.width = STANDARD_WIDTH
             self.height = STANDARD_HEIGHT
             self.font_scale = 1.0
+
+    def check_ffmpeg_installation(self):
+        """Check if FFmpeg is installed and accessible"""
+        try:
+            ffmpeg_path = shutil.which("ffmpeg")
+            if not ffmpeg_path:
+                raise Exception("FFmpeg not found in PATH. Please install FFmpeg.")
+
+            logger.info(f"FFmpeg found at: {ffmpeg_path}")
+
+            # Check version
+            result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=10)
+            if result.returncode != 0:
+                raise Exception(f"FFmpeg version check failed: {result.stderr}")
+
+            logger.info(f"FFmpeg version info: {result.stdout.split(chr(10))[0]}")
+            return ffmpeg_path
+
+        except FileNotFoundError:
+            raise Exception("FFmpeg not found. Please install FFmpeg.")
+        except subprocess.TimeoutExpired:
+            raise Exception("FFmpeg version check timed out.")
+        except Exception as e:
+            logger.error(f"FFmpeg check failed: {e}")
+            raise
+
+    def validate_input_file(self, file_path: str, file_type: str):
+        """Validate that input file exists and is readable"""
+        if not os.path.exists(file_path):
+            raise Exception(f"{file_type} file does not exist: {file_path}")
+
+        if not os.path.isfile(file_path):
+            raise Exception(f"{file_type} path is not a file: {file_path}")
+
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            raise Exception(f"{file_type} file is empty: {file_path}")
+
+        logger.info(f"Validated {file_type} file: {file_path} ({file_size} bytes)")
+
+    def run_ffmpeg_command_safe(self, ffmpeg_cmd, description: str):
+        """Run FFmpeg command with comprehensive error handling"""
+        try:
+            logger.info(f"Starting {description}")
+
+            # Log the actual command that will be run
+            cmd_args = ffmpeg_cmd.compile()
+            logger.info(f"FFmpeg command: {' '.join(cmd_args)}")
+
+            # Run the command and capture all output
+            result = subprocess.run(
+                cmd_args,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+
+            # Log all output
+            if result.stdout:
+                logger.info(f"FFmpeg stdout: {result.stdout}")
+
+            if result.stderr:
+                logger.info(f"FFmpeg stderr: {result.stderr}")
+
+            if result.returncode != 0:
+                error_msg = f"{description} failed with return code {result.returncode}"
+                if result.stderr:
+                    error_msg += f"\nStderr: {result.stderr}"
+                if result.stdout:
+                    error_msg += f"\nStdout: {result.stdout}"
+                raise Exception(error_msg)
+
+            logger.info(f"{description} completed successfully")
+
+        except subprocess.TimeoutExpired:
+            raise Exception(f"{description} timed out after 5 minutes")
+        except Exception as e:
+            logger.error(f"{description} failed: {e}")
+            raise
 
     def cleanup(self):
         """Clean up temporary files"""
@@ -275,12 +356,19 @@ class VideoComposer:
         try:
             logger.info("Starting video composition")
 
+            # Check FFmpeg installation first
+            self.check_ffmpeg_installation()
+
             segments = presentation_data["segments"]
             voice_segments = presentation_data["voice_segments"]
             title = presentation_data.get("title", "GNG Presentation")
 
+            logger.info(f"Processing {len(segments)} segments with {len(voice_segments)} voice segments")
+
             # Check duration limit (10 minutes = 600 seconds)
             total_duration = sum(vs["duration"] for vs in voice_segments)
+            logger.info(f"Total video duration: {total_duration:.2f} seconds")
+
             if total_duration > 600:
                 raise Exception("Video too long. Please limit presentation to 10 minutes.")
 
@@ -293,11 +381,17 @@ class VideoComposer:
             durations = []
 
             # Intro frame (3 seconds)
+            logger.info("Creating intro frame")
             intro_frame = self.create_intro_frame(title)
+            logger.info(f"Created intro frame: {intro_frame}")
+            self.validate_input_file(intro_frame, "Intro frame")
+
             frame_paths.append(intro_frame)
             durations.append(3.0)
+
             # Create silent audio for intro
             intro_audio = tempfile.mktemp(suffix='.wav')
+            logger.info(f"Creating intro audio: {intro_audio}")
             await self.create_silent_audio(intro_audio, 3.0)
             audio_paths.append(intro_audio)
 
@@ -306,22 +400,39 @@ class VideoComposer:
 
             # Content frames
             for i, segment in enumerate(segments):
+                logger.info(f"Processing content segment {i+1}: {segment.get('id', 'unknown')}")
+
                 voice_segment = next((vs for vs in voice_segments if vs["segment_id"] == segment["id"]), None)
 
                 if not voice_segment:
                     logger.warning(f"No voice segment found for {segment['id']}")
                     continue
 
+                logger.info(f"Voice segment duration: {voice_segment['duration']:.2f}s")
+
+                # Create frame
                 frame_path = self.create_segment_frame_from_dict(segment, i + 1)
+                logger.info(f"Created frame: {frame_path}")
+                self.validate_input_file(frame_path, f"Content frame {i+1}")
+
                 frame_paths.append(frame_path)
                 durations.append(voice_segment["duration"])
 
                 # Audio file path (convert URL to local path if needed)
                 audio_url = voice_segment["audio_url"]
+                logger.info(f"Voice segment audio_url: {audio_url}")
+
                 if audio_url.startswith('/static/'):
                     audio_path = audio_url[8:]  # Remove '/static/' prefix
                 else:
                     audio_path = audio_url
+
+                # Make sure we have the full path
+                if not os.path.isabs(audio_path):
+                    audio_path = os.path.join("static", "audio", os.path.basename(audio_path))
+
+                logger.info(f"Resolved audio path: {audio_path}")
+                self.validate_input_file(audio_path, f"Audio segment {i+1}")
 
                 audio_paths.append(audio_path)
 
@@ -329,11 +440,17 @@ class VideoComposer:
             if progress_callback:
                 await progress_callback("Generating outro frame...")
 
+            logger.info("Creating outro frame")
             outro_frame = self.create_outro_frame()
+            logger.info(f"Created outro frame: {outro_frame}")
+            self.validate_input_file(outro_frame, "Outro frame")
+
             frame_paths.append(outro_frame)
             durations.append(3.0)
+
             # Create silent audio for outro
             outro_audio = tempfile.mktemp(suffix='.wav')
+            logger.info(f"Creating outro audio: {outro_audio}")
             await self.create_silent_audio(outro_audio, 3.0)
             audio_paths.append(outro_audio)
 
@@ -379,15 +496,22 @@ class VideoComposer:
     async def create_silent_audio(self, output_path: str, duration: float):
         """Create silent audio file of specified duration"""
         try:
+            logger.info(f"Creating {duration}s silent audio: {output_path}")
+
             # Use FFmpeg to create silent audio
-            (
+            cmd = (
                 ffmpeg
                 .input('anullsrc', format='lavfi', t=duration, sample_rate=22050)
                 .output(output_path, acodec='pcm_s16le')
                 .overwrite_output()
-                .run(quiet=True)
             )
+
+            self.run_ffmpeg_command_safe(cmd, f"Silent audio creation ({duration}s)")
+
+            # Validate the output file was created
+            self.validate_input_file(output_path, "Silent audio output")
             self.temp_files.append(output_path)
+
         except Exception as e:
             logger.error(f"Failed to create silent audio: {e}")
             raise
@@ -395,6 +519,11 @@ class VideoComposer:
     async def create_video_with_ffmpeg(self, frame_paths: List[str], audio_paths: List[str], durations: List[float]) -> str:
         """Use FFmpeg to create final video"""
         try:
+            # First, check FFmpeg installation
+            self.check_ffmpeg_installation()
+
+            logger.info(f"Creating video with {len(frame_paths)} segments")
+
             video_path = tempfile.mktemp(suffix='.mp4')
             self.temp_files.append(video_path)
 
@@ -402,14 +531,23 @@ class VideoComposer:
             concat_file = tempfile.mktemp(suffix='.txt')
             self.temp_files.append(concat_file)
 
+            segment_videos = []
+
             with open(concat_file, 'w') as f:
                 for i, (frame_path, audio_path, duration) in enumerate(zip(frame_paths, audio_paths, durations)):
+                    logger.info(f"Processing segment {i+1}/{len(frame_paths)}: {duration}s")
+
+                    # Validate input files
+                    self.validate_input_file(frame_path, f"Frame {i+1}")
+                    self.validate_input_file(audio_path, f"Audio {i+1}")
+
                     # For each segment, create a mini video file
                     segment_video = tempfile.mktemp(suffix=f'_seg_{i}.mp4')
                     self.temp_files.append(segment_video)
+                    segment_videos.append(segment_video)
 
                     # Create video from static image with audio
-                    (
+                    cmd = (
                         ffmpeg
                         .input(frame_path, loop=1, t=duration)
                         .input(audio_path)
@@ -423,20 +561,41 @@ class VideoComposer:
                             shortest=None
                         )
                         .overwrite_output()
-                        .run(quiet=True)
                     )
 
-                    f.write(f"file '{segment_video}'\n")
+                    self.run_ffmpeg_command_safe(cmd, f"Segment {i+1} video creation")
+
+                    # Validate segment video was created
+                    self.validate_input_file(segment_video, f"Segment {i+1} video")
+
+                    # Write to concat file with absolute path
+                    abs_segment_path = os.path.abspath(segment_video)
+                    f.write(f"file '{abs_segment_path}'\n")
+
+            logger.info(f"Created concat file with {len(segment_videos)} segments")
+
+            # Validate concat file was created
+            self.validate_input_file(concat_file, "Concat file")
+
+            # Log concat file contents for debugging
+            with open(concat_file, 'r') as f:
+                concat_contents = f.read()
+                logger.info(f"Concat file contents:\n{concat_contents}")
 
             # Concatenate all segments
-            (
+            concat_cmd = (
                 ffmpeg
                 .input(concat_file, format='concat', safe=0)
                 .output(video_path, c='copy')
                 .overwrite_output()
-                .run(quiet=True)
             )
 
+            self.run_ffmpeg_command_safe(concat_cmd, "Final video concatenation")
+
+            # Validate final video was created
+            self.validate_input_file(video_path, "Final video")
+
+            logger.info(f"Video creation completed successfully: {video_path}")
             return video_path
 
         except Exception as e:

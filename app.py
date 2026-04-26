@@ -734,6 +734,48 @@ def health():
     """Health check endpoint"""
     return jsonify({"status": "healthy", "version": "1.0"})
 
+@app.route("/debug/ffmpeg", methods=["GET"])
+def debug_ffmpeg():
+    """Debug endpoint to check FFmpeg installation"""
+    import subprocess
+    import shutil
+
+    try:
+        # Check if FFmpeg is in PATH
+        ffmpeg_path = shutil.which("ffmpeg")
+
+        debug_info = {
+            "ffmpeg_in_path": ffmpeg_path is not None,
+            "ffmpeg_path": ffmpeg_path,
+            "path_env": os.environ.get("PATH", ""),
+        }
+
+        if ffmpeg_path:
+            try:
+                # Get version info
+                result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=10)
+                debug_info["version_check"] = {
+                    "return_code": result.returncode,
+                    "stdout": result.stdout.split('\n')[0] if result.stdout else "",
+                    "stderr": result.stderr[:500] if result.stderr else ""
+                }
+            except Exception as e:
+                debug_info["version_check"] = {"error": str(e)}
+
+        # Test video composer FFmpeg check
+        try:
+            from modules.video_composer import VideoComposer
+            composer = VideoComposer()
+            composer.check_ffmpeg_installation()
+            debug_info["video_composer_check"] = "SUCCESS"
+        except Exception as e:
+            debug_info["video_composer_check"] = f"ERROR: {str(e)}"
+
+        return jsonify(debug_info)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # Serve static files
 @app.route("/static/<path:filename>")
 def static_files(filename):
