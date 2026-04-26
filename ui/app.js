@@ -97,7 +97,7 @@ class VideoMaker {
         });
 
         this.elements.exportVideoBtn.addEventListener('click', () => {
-            this.exportVideo();
+            this.generateVideo();
         });
 
         this.elements.exportScriptBtn.addEventListener('click', () => {
@@ -270,8 +270,8 @@ class VideoMaker {
         );
 
         // Update slide content
-        this.elements.slideTitle.textContent = segment.title;
-        this.elements.slideText.textContent = segment.narration_text;
+        this.elements.slideTitle.textContent = this.stripMarkdown(segment.title);
+        this.elements.slideText.textContent = this.stripMarkdown(segment.narration_text);
 
         // Update audio
         if (voiceSegment) {
@@ -293,13 +293,13 @@ class VideoMaker {
             return `
                 <div class="script-segment" data-segment-index="${index}">
                     <div class="segment-header">
-                        <h4 class="segment-title">${segment.title}</h4>
+                        <h4 class="segment-title">${this.stripMarkdown(segment.title)}</h4>
                         <span class="segment-type">${segment.type}</span>
                         <span class="segment-duration">${voiceSegment ? Math.round(voiceSegment.duration) + 's' : ''}</span>
                     </div>
-                    <p class="segment-narration">${segment.narration_text}</p>
+                    <p class="segment-narration">${this.stripMarkdown(segment.narration_text)}</p>
                     <div class="segment-cues">
-                        ${segment.visual_cues.map(cue => `<span class="cue-tag">${cue}</span>`).join('')}
+                        ${segment.visual_cues.map(cue => `<span class="cue-tag">${this.stripMarkdown(cue)}</span>`).join('')}
                     </div>
                 </div>
             `;
@@ -441,9 +441,100 @@ class VideoMaker {
         alert('Audio export feature coming soon!');
     }
 
-    exportVideo() {
-        // Placeholder - would trigger video generation
-        alert('Video generation feature coming soon!');
+    async generateVideo() {
+        if (!this.currentPresentation) {
+            this.showError('No presentation loaded for video generation');
+            return;
+        }
+
+        try {
+            // Update button to show progress
+            const originalText = this.elements.exportVideoBtn.textContent;
+            this.elements.exportVideoBtn.disabled = true;
+
+            // Start video generation
+            const response = await fetch('/generate-video', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    presentation_data: this.currentPresentation
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Video generation failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+            const videoJobId = result.job_id;
+
+            // Poll for video generation status
+            this.pollVideoStatus(videoJobId, originalText);
+
+        } catch (error) {
+            console.error('Error starting video generation:', error);
+            this.showError('Failed to start video generation: ' + error.message);
+            this.elements.exportVideoBtn.disabled = false;
+        }
+    }
+
+    async pollVideoStatus(jobId, originalButtonText) {
+        try {
+            const response = await fetch(`/status/${jobId}`);
+            const status = await response.json();
+
+            // Update button with progress
+            this.elements.exportVideoBtn.textContent = status.message || 'Generating video...';
+
+            if (status.status === 'completed') {
+                // Video is ready for download
+                const videoResult = status.result;
+                this.downloadVideoFile(videoResult.video_url);
+
+                this.elements.exportVideoBtn.textContent = originalButtonText;
+                this.elements.exportVideoBtn.disabled = false;
+
+            } else if (status.status === 'failed') {
+                this.showError('Video generation failed: ' + status.message);
+                this.elements.exportVideoBtn.textContent = originalButtonText;
+                this.elements.exportVideoBtn.disabled = false;
+
+            } else {
+                // Continue polling
+                setTimeout(() => this.pollVideoStatus(jobId, originalButtonText), 2000);
+            }
+
+        } catch (error) {
+            console.error('Error checking video status:', error);
+            this.showError('Failed to check video generation status');
+            this.elements.exportVideoBtn.textContent = originalButtonText;
+            this.elements.exportVideoBtn.disabled = false;
+        }
+    }
+
+    downloadVideoFile(videoUrl) {
+        // Trigger download
+        const a = document.createElement('a');
+        a.href = videoUrl;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    stripMarkdown(text) {
+        // Remove markdown formatting for clean script export
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '$1')  // Bold
+            .replace(/\*(.*?)\*/g, '$1')      // Italic
+            .replace(/`(.*?)`/g, '$1')        // Code
+            .replace(/#{1,6}\s*(.*)/g, '$1')  // Headers
+            .replace(/\[(.*?)\]\(.*?\)/g, '$1')  // Links
+            .replace(/^[\s]*[-*+]\s+/gm, '')  // List items
+            .replace(/\s+/g, ' ')             // Extra whitespace
+            .trim();
     }
 
     exportScript() {
@@ -453,7 +544,11 @@ class VideoMaker {
         }
 
         const scriptText = this.currentPresentation.segments.map(segment => {
-            return `${segment.title}\n${'='.repeat(segment.title.length)}\n\n${segment.narration_text}\n\nVisual Cues: ${segment.visual_cues.join(', ')}\n\n`;
+            const cleanTitle = this.stripMarkdown(segment.title);
+            const cleanNarration = this.stripMarkdown(segment.narration_text);
+            const cleanCues = segment.visual_cues.map(cue => this.stripMarkdown(cue)).join(', ');
+
+            return `${cleanTitle}\n${'='.repeat(cleanTitle.length)}\n\n${cleanNarration}\n\nVisual Cues: ${cleanCues}\n\n`;
         }).join('');
 
         const blob = new Blob([scriptText], { type: 'text/plain' });

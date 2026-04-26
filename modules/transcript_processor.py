@@ -28,9 +28,13 @@ TITLE: {title}
 Your task is to:
 1. Identify the main themes and key points
 2. Structure the content into logical segments for video presentation
-3. Create smooth transitions between segments
-4. Suggest emphasis points for narration
-5. Recommend visual cues for each segment
+3. Create a compelling introduction that welcomes viewers and sets context (NOT raw transcript)
+4. Create smooth transitions between segments
+5. Suggest emphasis points for narration
+6. Recommend visual cues for each segment
+
+CRITICAL: The introduction segment should be a proper welcome/overview, not just the first part of the transcript.
+CRITICAL: All narration_text should be clean, conversational, and free of markdown formatting.
 
 Return a JSON response with this exact structure:
 {{
@@ -58,10 +62,12 @@ Return a JSON response with this exact structure:
 
 Guidelines:
 - Each segment should be 10-30 seconds of narration
-- Narration text should be conversational but professional
+- Narration text should be conversational, professional, and completely clean (no markdown, asterisks, or formatting)
+- Introduction should welcome viewers and preview what they'll learn, not just start with transcript content
 - Visual cues should be specific and actionable
-- Maintain the original meaning while improving flow
+- Maintain the original meaning while improving flow and clarity
 - Use emphasis_level (1-5) to indicate narration intensity
+- Write narration as if speaking directly to the viewer
 """
 
 async def process_transcript(transcript: str, title: Optional[str] = None) -> List[PresentationSegment]:
@@ -150,14 +156,15 @@ def create_fallback_segments(transcript: str, title: str) -> List[PresentationSe
 
     segments = []
 
-    # Introduction segment
+    # Introduction segment - create proper welcome instead of raw transcript
     intro_content = '. '.join(sentences[:chunk_size])
+    intro_narration = f"Welcome to {title}. In this presentation, we'll explore the key insights and ideas from this discussion. Let's begin."
     segments.append(PresentationSegment(
         id="seg_001",
         type=SegmentType.INTRODUCTION,
         title="Introduction",
         content=intro_content,
-        narration_text=f"Welcome to {title}. " + intro_content,
+        narration_text=intro_narration,
         visual_cues=["Title slide", "Presenter introduction"],
         timing={"estimated_duration": 15.0},
         emphasis_level=3
