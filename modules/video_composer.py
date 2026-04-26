@@ -105,7 +105,12 @@ class VideoComposer:
 
             # Log the actual command that will be run
             cmd_args = ffmpeg_cmd.compile()
-            logger.info(f"FFmpeg command: {' '.join(cmd_args)}")
+            logger.info(f"EXACT FFMPEG COMMAND: {' '.join(cmd_args)}")
+
+            # Log each argument separately for clarity
+            logger.info(f"FFmpeg arguments breakdown:")
+            for i, arg in enumerate(cmd_args):
+                logger.info(f"  [{i}]: {arg}")
 
             # Run the command and capture all output
             result = subprocess.run(
@@ -115,19 +120,25 @@ class VideoComposer:
                 timeout=300  # 5 minute timeout
             )
 
-            # Log all output
+            # Log return code first
+            logger.info(f"FFmpeg return code: {result.returncode}")
+
+            # Log all output (complete, not truncated)
             if result.stdout:
-                logger.info(f"FFmpeg stdout: {result.stdout}")
+                logger.info(f"FFmpeg COMPLETE STDOUT ({len(result.stdout)} chars):\n{result.stdout}")
 
             if result.stderr:
-                logger.info(f"FFmpeg stderr: {result.stderr}")
+                logger.info(f"FFmpeg COMPLETE STDERR ({len(result.stderr)} chars):\n{result.stderr}")
 
             if result.returncode != 0:
                 error_msg = f"{description} failed with return code {result.returncode}"
+                error_msg += f"\n\nCOMPLETE COMMAND:\n{' '.join(cmd_args)}"
                 if result.stderr:
-                    error_msg += f"\nStderr: {result.stderr}"
+                    error_msg += f"\n\nCOMPLETE STDERR:\n{result.stderr}"
                 if result.stdout:
-                    error_msg += f"\nStdout: {result.stdout}"
+                    error_msg += f"\n\nCOMPLETE STDOUT:\n{result.stdout}"
+
+                logger.error(f"FFMPEG FAILURE DETAILS:\n{error_msg}")
                 raise Exception(error_msg)
 
             logger.info(f"{description} completed successfully")
@@ -547,36 +558,76 @@ class VideoComposer:
             with open(concat_file, 'w') as f:
                 for i, (frame_path, audio_path, duration) in enumerate(zip(frame_paths, audio_paths, durations)):
                     logger.info(f"Processing segment {i+1}/{len(frame_paths)}: {duration}s")
+                    logger.info(f"Segment {i+1} inputs - Frame: {frame_path}, Audio: {audio_path}")
 
-                    # Validate input files
-                    self.validate_input_file(frame_path, f"Frame {i+1}")
-                    self.validate_input_file(audio_path, f"Audio {i+1}")
+                    # Enhanced validation with detailed info
+                    try:
+                        # Frame file validation
+                        if not os.path.exists(frame_path):
+                            raise Exception(f"Frame file does not exist: {frame_path}")
+                        frame_size = os.path.getsize(frame_path)
+                        if frame_size == 0:
+                            raise Exception(f"Frame file is empty: {frame_path}")
+                        logger.info(f"Frame {i+1} validated: {frame_path} ({frame_size} bytes)")
+
+                        # Audio file validation
+                        if not os.path.exists(audio_path):
+                            raise Exception(f"Audio file does not exist: {audio_path}")
+                        audio_size = os.path.getsize(audio_path)
+                        if audio_size == 0:
+                            raise Exception(f"Audio file is empty: {audio_path}")
+                        logger.info(f"Audio {i+1} validated: {audio_path} ({audio_size} bytes)")
+
+                        # Additional audio format check for MP3
+                        if not audio_path.lower().endswith('.mp3'):
+                            logger.warning(f"Audio file is not MP3 format: {audio_path}")
+
+                    except Exception as e:
+                        logger.error(f"Input validation failed for segment {i+1}: {e}")
+                        raise
 
                     # For each segment, create a mini video file
                     segment_video = tempfile.mktemp(suffix=f'_seg_{i}.mp4')
                     self.temp_files.append(segment_video)
                     segment_videos.append(segment_video)
+                    logger.info(f"Segment {i+1} output video: {segment_video}")
 
                     # Create video from static image with audio
                     # Handle multiple inputs properly
-                    video_input = ffmpeg.input(frame_path, loop=1, t=duration)
-                    audio_input = ffmpeg.input(audio_path)
+                    try:
+                        video_input = ffmpeg.input(frame_path, loop=1, t=duration)
+                        audio_input = ffmpeg.input(audio_path)
 
-                    cmd = ffmpeg.output(
-                        video_input, audio_input,
-                        segment_video,
-                        vcodec='libx264',
-                        acodec='aac',
-                        pix_fmt='yuv420p',
-                        r=VIDEO_FPS,
-                        s=f'{self.width}x{self.height}',
-                        shortest=True
-                    ).overwrite_output()
+                        cmd = ffmpeg.output(
+                            video_input, audio_input,
+                            segment_video,
+                            vcodec='libx264',
+                            acodec='aac',
+                            pix_fmt='yuv420p',
+                            r=VIDEO_FPS,
+                            s=f'{self.width}x{self.height}',
+                            shortest=True
+                        ).overwrite_output()
 
-                    self.run_ffmpeg_command_safe(cmd, f"Segment {i+1} video creation")
+                        logger.info(f"About to run FFmpeg for segment {i+1}")
+                        self.run_ffmpeg_command_safe(cmd, f"Segment {i+1} video creation")
+                        logger.info(f"FFmpeg completed for segment {i+1}")
 
-                    # Validate segment video was created
-                    self.validate_input_file(segment_video, f"Segment {i+1} video")
+                        # Validate segment video was created
+                        if not os.path.exists(segment_video):
+                            raise Exception(f"Segment video was not created: {segment_video}")
+                        segment_size = os.path.getsize(segment_video)
+                        if segment_size == 0:
+                            raise Exception(f"Segment video is empty: {segment_video}")
+                        logger.info(f"Segment {i+1} video created successfully: {segment_video} ({segment_size} bytes)")
+
+                    except Exception as e:
+                        logger.error(f"Segment {i+1} video creation failed: {e}")
+                        logger.error(f"Frame path: {frame_path}")
+                        logger.error(f"Audio path: {audio_path}")
+                        logger.error(f"Duration: {duration}")
+                        logger.error(f"Output path: {segment_video}")
+                        raise
 
                     # Write to concat file with absolute path
                     abs_segment_path = os.path.abspath(segment_video)
