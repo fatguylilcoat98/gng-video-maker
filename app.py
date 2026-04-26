@@ -801,6 +801,41 @@ def debug_voice():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/debug/test-voice", methods=["POST"])
+def test_voice_generation():
+    """Test voice generation with a simple segment"""
+    try:
+        from modules.voice_generator import generate_voice
+        from simple_schemas import PresentationSegment
+        import asyncio
+
+        # Create a test segment
+        test_segment = PresentationSegment(
+            id="test_001",
+            title="Test Voice Generation",
+            narration_text="This is a test of the voice generation system using ElevenLabs API.",
+            type="test",
+            emphasis_level=3
+        )
+
+        # Run voice generation
+        async def test_voice():
+            try:
+                result = await generate_voice([test_segment], "professional")
+                return result
+            except Exception as e:
+                return {"error": str(e)}
+
+        result = run_async_task(test_voice)
+
+        return jsonify({
+            "status": "test_completed",
+            "result": [{"segment_id": seg.segment_id, "audio_url": seg.audio_url, "duration": seg.duration} for seg in result] if hasattr(result[0], 'segment_id') else result
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # Serve static files
 @app.route("/static/<path:filename>")
 def static_files(filename):
