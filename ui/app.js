@@ -504,9 +504,9 @@ class VideoMaker {
         // Update button for next steps
         this.elements.continueToProcessingBtn.style.display = 'block';
         this.elements.continueToProcessingBtn.disabled = false;
-        this.elements.continueToProcessingBtn.textContent = 'Continue to Final Steps (5-6)';
+        this.elements.continueToProcessingBtn.textContent = 'Generate Voiceover & Export MP4';
         this.elements.continueToProcessingBtn.onclick = () => {
-            alert('Phase 3 Steps 5-6 coming next!');
+            this.startFinalSteps();
         };
     }
 
@@ -522,6 +522,180 @@ class VideoMaker {
         this.elements.videoAnalysisResults.style.display = 'block';
         this.elements.continueToProcessingBtn.disabled = false;
         this.elements.continueToProcessingBtn.textContent = 'Continue to Content Extraction';
+    }
+
+    // ============================================================================
+    // PHASE 3 STEPS 5-6: VOICEOVER AND FINAL EXPORT
+    // ============================================================================
+
+    async startFinalSteps() {
+        if (!this.currentProcessingJobId) {
+            this.showError('No processing job available for finalization');
+            return;
+        }
+
+        try {
+            // Get voice style preference
+            const voiceOptions = ['professional', 'conversational', 'authoritative', 'friendly', 'dramatic'];
+            const voiceStyle = prompt(
+                'Choose voice style:\n' + voiceOptions.map((v, i) => `${i + 1}. ${v}`).join('\n'),
+                'professional'
+            ) || 'professional';
+
+            // Validate voice style
+            const selectedVoice = voiceOptions.includes(voiceStyle) ? voiceStyle : 'professional';
+
+            // Update button state
+            this.elements.continueToProcessingBtn.disabled = true;
+            this.elements.continueToProcessingBtn.textContent = 'Generating voiceover...';
+
+            // Start Steps 5-6: Voiceover and export
+            const response = await fetch('/finalize-video', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    processing_job_id: this.currentProcessingJobId,
+                    voice_style: selectedVoice
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Finalization failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+            this.currentFinalizationJobId = result.job_id;
+
+            // Show finalization status and poll for results
+            this.showFinalizationStatus();
+            this.pollVideoFinalization();
+
+        } catch (error) {
+            console.error('Error starting finalization:', error);
+            this.showError('Failed to start video finalization: ' + error.message);
+            this.elements.continueToProcessingBtn.disabled = false;
+            this.elements.continueToProcessingBtn.textContent = 'Generate Voiceover & Export MP4';
+        }
+    }
+
+    showFinalizationStatus() {
+        // Hide processing results, show status
+        this.elements.videoAnalysisResults.style.display = 'none';
+        this.elements.videoUploadStatus.style.display = 'block';
+        this.updateVideoProgress(0, 'Starting voiceover generation...');
+    }
+
+    async pollVideoFinalization() {
+        if (!this.currentFinalizationJobId) return;
+
+        try {
+            const response = await fetch(`/video-finalization/${this.currentFinalizationJobId}`);
+            const data = await response.json();
+
+            if (data.status === 'completed') {
+                this.displayFinalizationResults(data.finalization, data.download_url);
+            } else if (data.status === 'failed') {
+                this.showError('Video finalization failed: ' + data.message);
+                this.resetToProcessingResults();
+            } else {
+                // Update progress and continue polling
+                this.updateVideoProgress(data.progress || 50, data.message || 'Finalizing video...');
+                setTimeout(() => this.pollVideoFinalization(), 2000);
+            }
+
+        } catch (error) {
+            console.error('Error polling finalization:', error);
+            this.showError('Failed to get finalization status');
+            this.resetToProcessingResults();
+        }
+    }
+
+    displayFinalizationResults(finalization, downloadUrl) {
+        // Hide finalization status
+        this.elements.videoUploadStatus.style.display = 'none';
+
+        // Show final results
+        this.elements.videoAnalysisResults.style.display = 'block';
+        this.elements.analysisSummary.innerHTML = `
+            <h4>🎉 Phase 3 Complete!</h4>
+
+            <div class="finalization-results">
+                <div class="result-section success-section">
+                    <h5>✅ Final Video Ready</h5>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Final Duration:</span>
+                        <span class="analysis-value">${this.formatDuration(finalization.final_duration)}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Resolution:</span>
+                        <span class="analysis-value">${finalization.final_resolution}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">File Size:</span>
+                        <span class="analysis-value">${this.formatFileSize(finalization.final_file_size)}</span>
+                    </div>
+                </div>
+
+                <div class="result-section">
+                    <h5>🎵 Voiceover Details</h5>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Voice Style:</span>
+                        <span class="analysis-value">${finalization.voiceover_metadata.voice_style}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Voice Segments:</span>
+                        <span class="analysis-value">${finalization.voiceover_metadata.total_segments}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Total Voice Duration:</span>
+                        <span class="analysis-value">${this.formatDuration(finalization.voiceover_metadata.total_voice_duration)}</span>
+                    </div>
+                </div>
+
+                <div class="result-section">
+                    <h5>📊 Complete Pipeline Summary</h5>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Original Duration:</span>
+                        <span class="analysis-value">${this.formatDuration(finalization.complete_pipeline.original_duration)}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">After Auto-Trim:</span>
+                        <span class="analysis-value">${this.formatDuration(finalization.complete_pipeline.trimmed_duration)}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Time Saved:</span>
+                        <span class="analysis-value">${this.formatDuration(finalization.complete_pipeline.time_saved)}</span>
+                    </div>
+                </div>
+
+                <div class="download-section">
+                    <button class="download-btn" onclick="window.location.href='${downloadUrl}'">
+                        📥 Download Final Video
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // Hide continue button
+        this.elements.continueToProcessingBtn.style.display = 'none';
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    resetToProcessingResults() {
+        // Reset UI to processing results state
+        this.elements.videoUploadStatus.style.display = 'none';
+        this.elements.videoAnalysisResults.style.display = 'block';
+        this.elements.continueToProcessingBtn.disabled = false;
+        this.elements.continueToProcessingBtn.textContent = 'Generate Voiceover & Export MP4';
     }
 
     async handleFileSelect(file) {

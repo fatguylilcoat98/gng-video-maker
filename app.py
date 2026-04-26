@@ -568,6 +568,142 @@ def get_video_processing_status(job_id):
 
     return jsonify(job["result"])
 
+def finalize_video_background(job_id, processing_result, voice_style):
+    """Background function for Steps 5-6: Voiceover and final export"""
+    try:
+        logger.info(f"Starting video finalization for job {job_id}")
+
+        processing_jobs[job_id]["progress"] = 20
+        processing_jobs[job_id]["message"] = "Generating ElevenLabs voiceover..."
+
+        # Import finalizer here to avoid startup issues
+        from modules.video_analyzer import finalize_video_with_voiceover
+
+        # Run Steps 5-6
+        finalization_result = run_async_task(finalize_video_with_voiceover, processing_result, voice_style)
+
+        processing_jobs[job_id]["progress"] = 80
+        processing_jobs[job_id]["message"] = "Creating final MP4..."
+
+        # Complete processing
+        processing_jobs[job_id]["progress"] = 100
+        processing_jobs[job_id]["status"] = "completed"
+        processing_jobs[job_id]["message"] = "Phase 3 complete! Video ready for download."
+        processing_jobs[job_id]["result"] = {
+            "finalization": finalization_result,
+            "download_url": f"/download-phase3-video/{os.path.basename(finalization_result['final_video_path'])}",
+            "phase": "phase_3_complete"
+        }
+
+        logger.info(f"Video finalization completed for job {job_id}")
+
+    except Exception as e:
+        logger.error(f"Error finalizing video for job {job_id}: {str(e)}")
+        processing_jobs[job_id]["status"] = "failed"
+        processing_jobs[job_id]["message"] = f"Video finalization failed: {str(e)}"
+
+@app.route("/finalize-video", methods=["POST"])
+def finalize_video_endpoint():
+    """Phase 3 Steps 5-6: Generate voiceover and export final MP4"""
+
+    if not request.is_json:
+        abort(400, "Request must be JSON")
+
+    data = request.get_json()
+
+    # Get required data
+    processing_job_id = data.get("processing_job_id")
+    voice_style = data.get("voice_style", "professional")
+
+    if not processing_job_id or processing_job_id not in processing_jobs:
+        abort(400, "Invalid or missing processing job ID")
+
+    processing_job = processing_jobs[processing_job_id]
+    if processing_job["status"] != "completed":
+        abort(400, "Processing job not completed")
+
+    try:
+        # Get processing result
+        processing_result = processing_job["result"]["processing"]
+
+        # Create finalization job
+        job_id = f"final_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+
+        # Initialize job tracking
+        processing_jobs[job_id] = create_processing_status(
+            job_id=job_id,
+            status="processing",
+            progress=0,
+            message="Starting video finalization..."
+        )
+
+        # Start background finalization
+        thread = threading.Thread(
+            target=finalize_video_background,
+            args=(job_id, processing_result, voice_style)
+        )
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            "job_id": job_id,
+            "status": "processing",
+            "message": "Video finalization started",
+            "finalization_url": f"/video-finalization/{job_id}"
+        })
+
+    except Exception as e:
+        logger.error(f"Error starting video finalization: {str(e)}")
+        abort(500, f"Failed to start finalization: {str(e)}")
+
+@app.route("/video-finalization/<job_id>", methods=["GET"])
+def get_video_finalization_status(job_id):
+    """Get video finalization status and results"""
+    if job_id not in processing_jobs:
+        abort(404, "Finalization job not found")
+
+    job = processing_jobs[job_id]
+    if job["status"] != "completed":
+        # Return current status if not complete
+        return jsonify({
+            "status": job["status"],
+            "progress": job["progress"],
+            "message": job["message"]
+        })
+
+    return jsonify(job["result"])
+
+@app.route("/download-phase3-video/<filename>")
+def download_phase3_video(filename):
+    """Download Phase 3 finalized video file"""
+    try:
+        # Find the job with this video filename
+        video_path = None
+        for job_id, job_data in processing_jobs.items():
+            if (job_data.get("status") == "completed" and
+                job_data.get("result") and
+                job_data["result"].get("finalization") and
+                job_data["result"]["finalization"].get("final_video_path")):
+
+                job_video_path = job_data["result"]["finalization"]["final_video_path"]
+                if os.path.basename(job_video_path) == filename:
+                    video_path = job_video_path
+                    break
+
+        if not video_path or not os.path.exists(video_path):
+            abort(404, "Video file not found")
+
+        return send_file(
+            video_path,
+            as_attachment=True,
+            download_name=f"gng_phase3_{filename}",
+            mimetype='video/mp4'
+        )
+
+    except Exception as e:
+        logger.error(f"Error downloading Phase 3 video {filename}: {str(e)}")
+        abort(500, "Failed to download video")
+
 @app.route("/", methods=["GET"])
 def root():
     """Serve the main UI"""

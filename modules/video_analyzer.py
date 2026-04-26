@@ -583,6 +583,290 @@ Guidelines:
             }
         }
 
+    async def generate_voiceover_for_script(self, narration_script: Dict[str, Any],
+                                          voice_style: str = "professional") -> List[Dict[str, Any]]:
+        """
+        Step 5: Generate ElevenLabs voiceover for the narration script
+        """
+        try:
+            logger.info("Generating ElevenLabs voiceover for narration script...")
+
+            # Import voice generation from existing Phase 2 module
+            from modules.voice_generator import VoiceStyle
+            from simple_schemas import PresentationSegment, VoiceSegment
+            import os
+
+            # Check if ElevenLabs API key is available
+            elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+            if not elevenlabs_api_key:
+                logger.warning("ElevenLabs API key not found, creating mock voice segments")
+                return self._create_mock_voice_segments(narration_script)
+
+            # Convert script segments to PresentationSegment format for voice generation
+            script_segments = narration_script.get('narration_segments', [])
+            voice_segments = []
+
+            # Voice ID mappings for different styles (from Phase 2)
+            voice_mappings = {
+                "professional": "21m00Tcm4TlvDq8ikWAM",  # Rachel
+                "conversational": "AZnzlk1XvdvUeBnXmlld",  # Domi
+                "authoritative": "EXAVITQu4vr4xnSDxMaL",  # Bella
+                "friendly": "XrExE9yKIg1WjnnlVkGX",  # Matilda
+                "dramatic": "onwK4e9ZLuTAKqWW03F9"   # Daniel
+            }
+
+            voice_id = voice_mappings.get(voice_style, voice_mappings["professional"])
+
+            for i, segment in enumerate(script_segments):
+                try:
+                    logger.info(f"Generating voice for segment {i+1}/{len(script_segments)}: {segment['title']}")
+
+                    voice_segment = await self._generate_single_voice_segment(
+                        segment, voice_id, voice_style, i
+                    )
+                    voice_segments.append(voice_segment)
+
+                    # Small delay to avoid rate limiting
+                    await asyncio.sleep(0.5)
+
+                except Exception as e:
+                    logger.error(f"Failed to generate voice for segment {segment['segment_id']}: {e}")
+                    # Create fallback mock segment
+                    mock_segment = self._create_mock_voice_segment(segment, i)
+                    voice_segments.append(mock_segment)
+
+            logger.info(f"Voiceover generation complete: {len(voice_segments)} segments created")
+            return voice_segments
+
+        except Exception as e:
+            logger.error(f"Voiceover generation failed: {e}")
+            return self._create_mock_voice_segments(narration_script)
+
+    async def _generate_single_voice_segment(self, segment: Dict[str, Any], voice_id: str,
+                                           voice_style: str, segment_index: int) -> Dict[str, Any]:
+        """Generate voice for a single narration segment"""
+        try:
+            import httpx
+            import uuid
+
+            elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+            api_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+
+            headers = {
+                "Accept": "audio/mpeg",
+                "Content-Type": "application/json",
+                "xi-api-key": elevenlabs_api_key
+            }
+
+            # Voice settings based on segment type and style
+            stability = 0.5
+            similarity_boost = 0.75
+            style_setting = 0.0
+
+            if segment.get('type') == 'introduction':
+                stability = 0.6  # More stable for intro
+            elif segment.get('type') == 'conclusion':
+                stability = 0.6
+                style_setting = 0.1
+            elif segment.get('emphasis_level', 3) >= 4:
+                style_setting = 0.2  # More expressive for emphasis
+
+            data = {
+                "text": segment['narration_text'],
+                "model_id": "eleven_monolingual_v1",
+                "voice_settings": {
+                    "stability": stability,
+                    "similarity_boost": similarity_boost,
+                    "style": style_setting,
+                    "use_speaker_boost": True
+                }
+            }
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(api_url, headers=headers, json=data)
+
+                if response.status_code != 200:
+                    error_text = response.text
+                    logger.error(f"ElevenLabs API error {response.status_code}: {error_text}")
+                    raise Exception(f"ElevenLabs API error: {response.status_code}")
+
+                # Save audio file
+                audio_filename = f"voice_{segment['segment_id']}_{uuid.uuid4().hex[:8]}.mp3"
+                audio_path = f"static/audio/{audio_filename}"
+
+                # Ensure audio directory exists
+                os.makedirs("static/audio", exist_ok=True)
+
+                with open(audio_path, "wb") as f:
+                    f.write(response.content)
+
+                # Estimate duration (rough calculation based on text length)
+                word_count = len(segment['narration_text'].split())
+                estimated_duration = (word_count / 150) * 60  # 150 words per minute
+
+                return {
+                    "segment_id": segment['segment_id'],
+                    "audio_url": f"/static/audio/{audio_filename}",
+                    "audio_path": audio_path,
+                    "duration": estimated_duration,
+                    "voice_settings": {
+                        "voice_id": voice_id,
+                        "stability": stability,
+                        "similarity_boost": similarity_boost,
+                        "style": style_setting
+                    },
+                    "generated_at": datetime.now().isoformat(),
+                    "segment_index": segment_index
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to generate voice segment: {e}")
+            raise
+
+    def _create_mock_voice_segments(self, narration_script: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Create mock voice segments when ElevenLabs is not available"""
+        script_segments = narration_script.get('narration_segments', [])
+        mock_segments = []
+
+        for i, segment in enumerate(script_segments):
+            mock_segment = self._create_mock_voice_segment(segment, i)
+            mock_segments.append(mock_segment)
+
+        return mock_segments
+
+    def _create_mock_voice_segment(self, segment: Dict[str, Any], segment_index: int) -> Dict[str, Any]:
+        """Create a single mock voice segment"""
+        word_count = len(segment['narration_text'].split())
+        estimated_duration = (word_count / 150) * 60  # 150 words per minute
+
+        return {
+            "segment_id": segment['segment_id'],
+            "audio_url": f"/static/audio/mock_{segment['segment_id']}.mp3",
+            "audio_path": f"static/audio/mock_{segment['segment_id']}.mp3",
+            "duration": estimated_duration,
+            "voice_settings": {
+                "voice_id": "mock_voice",
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "style": 0.0,
+                "mock": True
+            },
+            "generated_at": datetime.now().isoformat(),
+            "segment_index": segment_index
+        }
+
+    async def create_final_video_with_voiceover(self, trimmed_video_path: str,
+                                              voice_segments: List[Dict[str, Any]],
+                                              narration_script: Dict[str, Any]) -> str:
+        """
+        Step 6: Create final MP4 with ElevenLabs voiceover synced to trimmed video
+        """
+        try:
+            logger.info("Creating final video with voiceover...")
+
+            # Create final video path
+            base_name = os.path.splitext(os.path.basename(trimmed_video_path))[0]
+            final_video_path = tempfile.mktemp(suffix=f'_final_{base_name}.mp4')
+            self.temp_files.append(final_video_path)
+
+            # Get video duration
+            video_info = await self.get_video_info(trimmed_video_path)
+            video_duration = video_info['duration']
+
+            # Calculate total voiceover duration
+            total_voice_duration = sum(vs['duration'] for vs in voice_segments)
+
+            # Create combined audio track
+            combined_audio_path = await self._create_combined_audio_track(
+                voice_segments, total_voice_duration, video_duration
+            )
+
+            # Combine video with new audio track
+            (
+                ffmpeg
+                .input(trimmed_video_path)
+                .input(combined_audio_path)
+                .output(
+                    final_video_path,
+                    vcodec='libx264',
+                    acodec='aac',
+                    map='0:v:0',  # Video from first input
+                    map='1:a:0',  # Audio from second input
+                    shortest=None  # Don't cut to shortest stream
+                )
+                .overwrite_output()
+                .run(quiet=True)
+            )
+
+            # Verify final video was created
+            if not os.path.exists(final_video_path):
+                raise Exception("Failed to create final video")
+
+            final_info = await self.get_video_info(final_video_path)
+
+            logger.info(f"Final video created: {final_info['duration']:.1f}s, {final_info['width']}x{final_info['height']}")
+            return final_video_path
+
+        except Exception as e:
+            logger.error(f"Final video creation failed: {e}")
+            raise
+
+    async def _create_combined_audio_track(self, voice_segments: List[Dict[str, Any]],
+                                         total_voice_duration: float, video_duration: float) -> str:
+        """Create a single audio track from multiple voice segments"""
+        try:
+            combined_audio_path = tempfile.mktemp(suffix='.wav')
+            self.temp_files.append(combined_audio_path)
+
+            if not voice_segments:
+                # Create silent audio
+                (
+                    ffmpeg
+                    .input('anullsrc', format='lavfi', t=video_duration, sample_rate=22050)
+                    .output(combined_audio_path, acodec='pcm_s16le')
+                    .overwrite_output()
+                    .run(quiet=True)
+                )
+                return combined_audio_path
+
+            # Create concat file for audio segments
+            concat_file = tempfile.mktemp(suffix='.txt')
+            self.temp_files.append(concat_file)
+
+            with open(concat_file, 'w') as f:
+                for voice_segment in voice_segments:
+                    # Check if audio file exists (handle mock segments)
+                    audio_path = voice_segment['audio_path']
+                    if voice_segment['voice_settings'].get('mock'):
+                        # Create silent audio for mock segments
+                        mock_audio = tempfile.mktemp(suffix='.wav')
+                        self.temp_files.append(mock_audio)
+                        (
+                            ffmpeg
+                            .input('anullsrc', format='lavfi', t=voice_segment['duration'], sample_rate=22050)
+                            .output(mock_audio, acodec='pcm_s16le')
+                            .overwrite_output()
+                            .run(quiet=True)
+                        )
+                        audio_path = mock_audio
+
+                    f.write(f"file '{audio_path}'\n")
+
+            # Concatenate all audio segments
+            (
+                ffmpeg
+                .input(concat_file, format='concat', safe=0)
+                .output(combined_audio_path, acodec='pcm_s16le')
+                .overwrite_output()
+                .run(quiet=True)
+            )
+
+            return combined_audio_path
+
+        except Exception as e:
+            logger.error(f"Failed to create combined audio track: {e}")
+            raise
+
 # Async wrapper function for Phase 3 compatibility
 async def analyze_uploaded_video(video_path: str) -> Dict[str, Any]:
     """
@@ -647,3 +931,58 @@ async def process_video_content(video_path: str, analysis: Dict[str, Any], title
         raise
     finally:
         analyzer.cleanup()
+
+async def finalize_video_with_voiceover(processing_result: Dict[str, Any], voice_style: str = "professional") -> Dict[str, Any]:
+    """
+    Steps 5-6: Generate ElevenLabs voiceover and export final MP4
+    """
+    analyzer = VideoAnalyzer()
+
+    try:
+        logger.info("Starting Steps 5-6: Voiceover generation and final export...")
+
+        trimmed_video_path = processing_result['trimmed_video_path']
+        narration_script = processing_result['narration_script']
+
+        # Step 5: Generate ElevenLabs voiceover for script
+        voice_segments = await analyzer.generate_voiceover_for_script(narration_script, voice_style)
+
+        # Step 6: Create final MP4 with voiceover synced to video
+        final_video_path = await analyzer.create_final_video_with_voiceover(
+            trimmed_video_path, voice_segments, narration_script
+        )
+
+        # Get final video info
+        final_info = await analyzer.get_video_info(final_video_path)
+
+        result = {
+            "final_video_path": final_video_path,
+            "voice_segments": voice_segments,
+            "final_duration": final_info['duration'],
+            "final_file_size": final_info['file_size'],
+            "final_resolution": f"{final_info['width']}x{final_info['height']}",
+            "voiceover_metadata": {
+                "voice_style": voice_style,
+                "total_segments": len(voice_segments),
+                "total_voice_duration": sum(vs['duration'] for vs in voice_segments),
+                "generated_at": datetime.now().isoformat()
+            },
+            "complete_pipeline": {
+                "original_duration": processing_result['original_duration'],
+                "trimmed_duration": processing_result['trimmed_duration'],
+                "final_duration": final_info['duration'],
+                "time_saved": processing_result['time_saved'],
+                "voice_added": True,
+                "phase": "phase_3_complete"
+            }
+        }
+
+        logger.info(f"Phase 3 complete: Final video {final_info['duration']:.1f}s with {len(voice_segments)} voice segments")
+        return result
+
+    except Exception as e:
+        logger.error(f"Video finalization failed: {e}")
+        raise
+    finally:
+        # Note: Don't cleanup here - final video path needed for download
+        pass

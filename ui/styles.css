@@ -675,6 +675,48 @@ body::before {
     margin: 0;
 }
 
+/* Phase 3 Final Results */
+.finalization-results {
+    margin-top: 1rem;
+}
+
+.success-section {
+    border-left-color: var(--accent-green) !important;
+}
+
+.success-section h5 {
+    color: var(--accent-green) !important;
+}
+
+.download-section {
+    text-align: center;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.download-btn {
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-orange));
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+}
+
+.download-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4);
+}
+
+.download-btn:active {
+    transform: translateY(0);
+}
+
 /* Buttons */
 .process-btn, .export-btn {
     background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-orange) 100%);
