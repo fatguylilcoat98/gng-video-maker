@@ -776,6 +776,28 @@ def debug_ffmpeg():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/debug/voice", methods=["GET"])
+def debug_voice():
+    """Debug endpoint to check voice generation setup"""
+    try:
+        debug_info = {
+            "elevenlabs_api_key_set": bool(os.getenv("ELEVENLABS_API_KEY")),
+            "elevenlabs_api_key_length": len(os.getenv("ELEVENLABS_API_KEY", "")),
+        }
+
+        # Test voice generation setup
+        try:
+            from modules.voice_generator import ELEVENLABS_API_KEY, ELEVENLABS_API_URL
+            debug_info["voice_module_api_key_set"] = bool(ELEVENLABS_API_KEY)
+            debug_info["voice_module_api_url"] = ELEVENLABS_API_URL
+        except Exception as e:
+            debug_info["voice_module_error"] = str(e)
+
+        return jsonify(debug_info)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # Serve static files
 @app.route("/static/<path:filename>")
 def static_files(filename):
