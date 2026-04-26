@@ -8,7 +8,7 @@ Truth · Safety · We Got Your Back
 import logging
 import os
 import asyncio
-import aiohttp
+import httpx
 import json
 from typing import Optional, Dict, Any
 
@@ -48,21 +48,20 @@ async def call_anthropic_api(
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
                 ANTHROPIC_API_URL,
                 headers=headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as response:
+                json=payload
+            )
 
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Anthropic API error {response.status}: {error_text}")
-                    raise Exception(f"Anthropic API error: {response.status}")
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"Anthropic API error {response.status_code}: {error_text}")
+                raise Exception(f"Anthropic API error: {response.status_code}")
 
-                result = await response.json()
-                return result["content"][0]["text"]
+            result = response.json()
+            return result["content"][0]["text"]
 
     except asyncio.TimeoutError:
         logger.error("Anthropic API call timed out")

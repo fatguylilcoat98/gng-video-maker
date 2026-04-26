@@ -8,7 +8,7 @@ Truth · Safety · We Got Your Back
 import logging
 import os
 import asyncio
-import aiohttp
+import httpx
 import aiofiles
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -96,29 +96,27 @@ async def generate_segment_voice(
     url = f"{ELEVENLABS_API_URL}/text-to-speech/{voice_id}"
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
                 url,
                 headers=headers,
-                json=data,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as response:
+                json=data
+            )
 
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"ElevenLabs API error {response.status}: {error_text}")
-                    raise Exception(f"ElevenLabs API error: {response.status}")
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"ElevenLabs API error {response.status_code}: {error_text}")
+                raise Exception(f"ElevenLabs API error: {response.status_code}")
 
-                # Save audio file
-                audio_filename = f"audio_{segment.id}_{uuid.uuid4().hex[:8]}.mp3"
-                audio_path = f"static/audio/{audio_filename}"
+            # Save audio file
+            audio_filename = f"audio_{segment.id}_{uuid.uuid4().hex[:8]}.mp3"
+            audio_path = f"static/audio/{audio_filename}"
 
-                # Ensure audio directory exists
-                os.makedirs("static/audio", exist_ok=True)
+            # Ensure audio directory exists
+            os.makedirs("static/audio", exist_ok=True)
 
-                async with aiofiles.open(audio_path, "wb") as f:
-                    async for chunk in response.content.iter_chunked(8192):
-                        await f.write(chunk)
+            async with aiofiles.open(audio_path, "wb") as f:
+                await f.write(response.content)
 
                 # Estimate duration (rough calculation based on text length)
                 estimated_duration = estimate_audio_duration(segment.narration_text)
