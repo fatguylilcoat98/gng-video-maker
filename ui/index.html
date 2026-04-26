@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GNG Video Maker | Good Neighbor Guard</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:wght@400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo-section">
+                <div class="logo-container">
+                    <div class="gng-logo">
+                        <div class="logo-circle">
+                            <span class="logo-text">GNG</span>
+                            <div class="energy-ring"></div>
+                            <div class="energy-ring ring-2"></div>
+                        </div>
+                    </div>
+                    <div class="brand-info">
+                        <h1 class="app-title">Video Maker</h1>
+                        <p class="tagline">Transform transcripts into powerful presentations</p>
+                    </div>
+                </div>
+                <div class="header-subtitle">
+                    <span class="good-neighbor">GOOD NEIGHBOR GUARD</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <div class="upload-card">
+                    <div class="upload-header">
+                        <h2 class="section-title">Upload Your Content</h2>
+                        <p class="section-subtitle">Drop your transcript or conversation to get started</p>
+                    </div>
+
+                    <div class="upload-form">
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-content">
+                                <div class="upload-icon">📄</div>
+                                <p class="upload-text">Drop your transcript here or click to browse</p>
+                                <p class="upload-hint">Supports text files, documents, or paste directly</p>
+                            </div>
+                            <input type="file" id="fileInput" accept=".txt,.doc,.docx" style="display: none;">
+                        </div>
+
+                        <div class="text-input-section">
+                            <label for="transcriptInput" class="input-label">Or paste your transcript:</label>
+                            <textarea
+                                id="transcriptInput"
+                                class="transcript-textarea"
+                                placeholder="Paste your conversation or transcript here..."
+                                rows="8"
+                            ></textarea>
+                        </div>
+
+                        <div class="options-section">
+                            <div class="option-group">
+                                <label for="titleInput" class="input-label">Presentation Title (optional):</label>
+                                <input
+                                    type="text"
+                                    id="titleInput"
+                                    class="title-input"
+                                    placeholder="Enter a title for your presentation"
+                                >
+                            </div>
+
+                            <div class="option-group">
+                                <label for="voiceStyle" class="input-label">Voice Style:</label>
+                                <select id="voiceStyle" class="voice-select">
+                                    <option value="professional">Professional</option>
+                                    <option value="conversational">Conversational</option>
+                                    <option value="authoritative">Authoritative</option>
+                                    <option value="friendly">Friendly</option>
+                                    <option value="dramatic">Dramatic</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button id="processButton" class="process-btn">
+                            <span class="btn-text">Create Presentation</span>
+                            <div class="btn-loader" style="display: none;">
+                                <div class="loader-dots">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Processing Status -->
+            <section class="status-section" id="statusSection" style="display: none;">
+                <div class="status-card">
+                    <div class="status-header">
+                        <h3 class="status-title">Processing Your Content</h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <p class="status-message" id="statusMessage">Initializing...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Presenter Interface -->
+            <section class="presenter-section" id="presenterSection" style="display: none;">
+                <div class="presenter-layout">
+                    <!-- Left Panel - Video Display -->
+                    <div class="video-panel">
+                        <div class="video-header">
+                            <h3 class="panel-title">Presentation View</h3>
+                            <div class="video-controls">
+                                <button id="playPauseBtn" class="control-btn">▶️</button>
+                                <button id="stopBtn" class="control-btn">⏹️</button>
+                                <span id="timeDisplay" class="time-display">0:00 / 0:00</span>
+                            </div>
+                        </div>
+                        <div class="video-display" id="videoDisplay">
+                            <div class="slide-content" id="slideContent">
+                                <h2 id="slideTitle">Presentation Title</h2>
+                                <p id="slideText">Slide content will appear here...</p>
+                            </div>
+                            <audio id="audioPlayer" preload="auto"></audio>
+                        </div>
+                        <div class="video-timeline">
+                            <input type="range" id="timelineSlider" class="timeline-slider" min="0" max="100" value="0">
+                        </div>
+                    </div>
+
+                    <!-- Right Panel - Script Display -->
+                    <div class="script-panel">
+                        <div class="script-header">
+                            <h3 class="panel-title">Narration Script</h3>
+                            <div class="script-info" id="scriptInfo">
+                                <span>0 segments</span>
+                            </div>
+                        </div>
+                        <div class="script-content" id="scriptContent">
+                            <div class="script-placeholder">
+                                <p>Your narration script will appear here as the presentation plays</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export Options -->
+                <div class="export-section">
+                    <div class="export-header">
+                        <h3 class="section-title">Export Your Presentation</h3>
+                    </div>
+                    <div class="export-options">
+                        <button id="exportAudioBtn" class="export-btn">
+                            🎵 Download Audio Only
+                        </button>
+                        <button id="exportVideoBtn" class="export-btn primary">
+                            📹 Generate Video
+                        </button>
+                        <button id="exportScriptBtn" class="export-btn">
+                            📄 Download Script
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="attribution">
+                <p>GNG Video Maker — Built by Christopher Hughes · Sacramento, CA</p>
+                <p>Created with the help of AI collaborators · Truth · Safety · We Got Your Back</p>
+            </div>
+        </footer>
+    </div>
+
+    <script src="static/app.js"></script>
+</body>
+</html>
