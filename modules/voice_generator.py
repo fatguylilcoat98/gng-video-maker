@@ -10,6 +10,8 @@ import os
 import asyncio
 import httpx
 import aiofiles
+import tempfile
+import subprocess
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import uuid
@@ -218,17 +220,61 @@ def create_mock_voice_segments(segments: List[PresentationSegment]) -> List[Voic
 
 def create_mock_voice_segment(segment: PresentationSegment) -> VoiceSegment:
     """
-    Create a single mock voice segment
+    Create a single mock voice segment with actual silent audio file
     """
-    return VoiceSegment(
-        segment_id=segment.id,
-        audio_url=f"/static/audio/mock_{segment.id}.mp3",
-        duration=estimate_audio_duration(segment.narration_text),
-        voice_settings={
-            "stability": 0.5,
-            "similarity_boost": 0.75,
-            "style": 0.0,
-            "mock": True
-        },
-        generated_at=datetime.now().isoformat()
-    )
+    try:
+        # Ensure audio directory exists
+        os.makedirs("static/audio", exist_ok=True)
+
+        # Create filename
+        audio_filename = f"mock_{segment.id}.mp3"
+        audio_path = f"static/audio/{audio_filename}"
+
+        # Calculate duration
+        duration = estimate_audio_duration(segment.narration_text)
+
+        # Create silent audio file using FFmpeg
+        # Only create if file doesn't already exist
+        if not os.path.exists(audio_path):
+            logger.info(f"Creating mock audio file: {audio_path} ({duration}s)")
+
+            cmd = [
+                "ffmpeg", "-f", "lavfi", "-i", f"anullsrc=r=22050",
+                "-t", str(duration), "-acodec", "mp3", "-y", audio_path
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+            if result.returncode != 0:
+                logger.warning(f"Failed to create mock audio file: {result.stderr}")
+                # Fallback: create a very short file
+                duration = 1.0
+                cmd = [
+                    "ffmpeg", "-f", "lavfi", "-i", f"anullsrc=r=22050",
+                    "-t", "1", "-acodec", "mp3", "-y", audio_path
+                ]
+                subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
+        return VoiceSegment(
+            segment_id=segment.id,
+            audio_url=f"/static/audio/{audio_filename}",
+            duration=duration,
+            voice_settings={
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "style": 0.0,
+                "mock": True
+            },
+            generated_at=datetime.now().isoformat()
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to create mock voice segment: {e}")
+        # Return basic segment with very short duration as fallback
+        return VoiceSegment(
+            segment_id=segment.id,
+            audio_url=f"/static/audio/mock_{segment.id}.mp3",
+            duration=1.0,
+            voice_settings={"mock": True},
+            generated_at=datetime.now().isoformat()
+        )
