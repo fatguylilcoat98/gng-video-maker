@@ -14,7 +14,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import uuid
 
-from schemas import PresentationSegment, VoiceSegment, VoiceStyle, VoiceConfig
+from simple_schemas import PresentationSegment, VoiceSegment, VoiceStyle, VoiceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ async def generate_segment_voice(
     """
     Generate voice for a single segment
     """
-    voice_id = VOICE_MAPPINGS.get(VoiceStyle(voice_style), VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
+    voice_id = VOICE_MAPPINGS.get(voice_style, VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
 
     # Configure voice settings based on segment type and emphasis
     voice_config = get_voice_config(segment, voice_style)
@@ -175,7 +175,7 @@ def get_voice_config(segment: PresentationSegment, voice_style: str) -> VoiceCon
         )
     }
 
-    config = base_config.get(VoiceStyle(voice_style), base_config[VoiceStyle.PROFESSIONAL])
+    config = base_config.get(voice_style, base_config[VoiceStyle.PROFESSIONAL])
 
     # Adjust based on segment emphasis level
     emphasis_multiplier = segment.emphasis_level / 3.0  # Normalize to 1.0 at level 3

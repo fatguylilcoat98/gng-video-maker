@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import re
 
-from schemas import PresentationSegment, SegmentType, TranscriptAnalysis
+from simple_schemas import PresentationSegment, SegmentType
 from modules.llm_utils import call_anthropic_api
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ async def process_transcript(transcript: str, title: Optional[str] = None) -> Li
         for seg_data in analysis_data["segments"]:
             segment = PresentationSegment(
                 id=seg_data["id"],
-                type=SegmentType(seg_data["type"]),
+                type=seg_data["type"],
                 title=seg_data["title"],
                 content=seg_data["content"],
                 narration_text=seg_data["narration_text"],

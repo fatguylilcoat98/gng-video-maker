@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 from datetime import datetime
 import uuid
 
-from schemas import PresentationSegment, VoiceSegment, PresentationData
+from simple_schemas import PresentationSegment, VoiceSegment, PresentationData
 
 logger = logging.getLogger(__name__)
 
