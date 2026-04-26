@@ -704,6 +704,26 @@ def download_phase3_video(filename):
         logger.error(f"Error downloading Phase 3 video {filename}: {str(e)}")
         abort(500, "Failed to download video")
 
+@app.route("/download-thumbnail/<filename>")
+def download_thumbnail(filename):
+    """Download thumbnail image file"""
+    try:
+        thumbnail_path = os.path.join("static/thumbnails", filename)
+
+        if not os.path.exists(thumbnail_path):
+            abort(404, "Thumbnail file not found")
+
+        return send_file(
+            thumbnail_path,
+            as_attachment=True,
+            download_name=f"gng_thumbnail_{filename}",
+            mimetype='image/jpeg'
+        )
+
+    except Exception as e:
+        logger.error(f"Error downloading thumbnail {filename}: {str(e)}")
+        abort(500, "Failed to download thumbnail")
+
 @app.route("/", methods=["GET"])
 def root():
     """Serve the main UI"""

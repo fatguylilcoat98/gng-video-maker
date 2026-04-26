@@ -867,6 +867,22 @@ Guidelines:
             logger.error(f"Failed to create combined audio track: {e}")
             raise
 
+    async def generate_phase3_thumbnail(self, title: str) -> str:
+        """Generate thumbnail for Phase 3 video"""
+        try:
+            from modules.thumbnail_generator import generate_phase3_thumbnail
+
+            # Determine video mode - for Phase 3, we'll default to standard unless specified
+            video_mode = "standard"  # Phase 3 doesn't have mode switching yet
+
+            thumbnail_path = await generate_phase3_thumbnail(title, video_mode)
+            logger.info(f"Phase 3 thumbnail generated: {thumbnail_path}")
+            return thumbnail_path
+
+        except Exception as e:
+            logger.error(f"Failed to generate Phase 3 thumbnail: {e}")
+            return None
+
 # Async wrapper function for Phase 3 compatibility
 async def analyze_uploaded_video(video_path: str) -> Dict[str, Any]:
     """
@@ -955,8 +971,14 @@ async def finalize_video_with_voiceover(processing_result: Dict[str, Any], voice
         # Get final video info
         final_info = await analyzer.get_video_info(final_video_path)
 
+        # Generate thumbnail for the final video
+        title = processing_result.get('narration_script', {}).get('script_metadata', {}).get('title') or "Phase 3 Video"
+        thumbnail_path = await analyzer.generate_phase3_thumbnail(title)
+
         result = {
             "final_video_path": final_video_path,
+            "thumbnail_path": thumbnail_path,
+            "thumbnail_url": f"/static/thumbnails/{os.path.basename(thumbnail_path)}" if thumbnail_path else None,
             "voice_segments": voice_segments,
             "final_duration": final_info['duration'],
             "final_file_size": final_info['file_size'],
@@ -973,6 +995,7 @@ async def finalize_video_with_voiceover(processing_result: Dict[str, Any], voice
                 "final_duration": final_info['duration'],
                 "time_saved": processing_result['time_saved'],
                 "voice_added": True,
+                "has_thumbnail": thumbnail_path is not None,
                 "phase": "phase_3_complete"
             }
         }

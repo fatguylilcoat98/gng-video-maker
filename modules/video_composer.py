@@ -344,6 +344,12 @@ class VideoComposer:
             video_path = await self.create_video_with_ffmpeg(frame_paths, audio_paths, durations)
 
             if progress_callback:
+                await progress_callback("Generating thumbnail...")
+
+            # Generate thumbnail
+            thumbnail_path = await self.generate_thumbnail_for_video(title)
+
+            if progress_callback:
                 await progress_callback("Video generation complete!")
 
             # Calculate file size
@@ -352,7 +358,8 @@ class VideoComposer:
             return {
                 "video_url": f"/download-video/{os.path.basename(video_path)}",
                 "video_path": video_path,  # For internal use
-                "thumbnail_url": "/static/assets/gng-logo.png",
+                "thumbnail_url": f"/static/thumbnails/{os.path.basename(thumbnail_path)}" if thumbnail_path else "/static/assets/gng-logo.png",
+                "thumbnail_path": thumbnail_path,  # For internal use
                 "duration": sum(durations),
                 "file_size": file_size,
                 "metadata": {
@@ -360,7 +367,8 @@ class VideoComposer:
                     "fps": VIDEO_FPS,
                     "segments_count": len(segments),
                     "video_mode": self.video_mode,
-                    "generated_at": datetime.now().isoformat()
+                    "generated_at": datetime.now().isoformat(),
+                    "has_thumbnail": thumbnail_path is not None
                 }
             }
 
@@ -434,6 +442,20 @@ class VideoComposer:
         except Exception as e:
             logger.error(f"FFmpeg video creation failed: {e}")
             raise
+
+    async def generate_thumbnail_for_video(self, title: str) -> str:
+        """Generate thumbnail for the composed video"""
+        try:
+            from modules.thumbnail_generator import generate_video_thumbnail
+
+            thumbnail_path = await generate_video_thumbnail(title, self.video_mode)
+            logger.info(f"Thumbnail generated for video: {thumbnail_path}")
+            return thumbnail_path
+
+        except Exception as e:
+            logger.error(f"Failed to generate thumbnail: {e}")
+            # Return None so video generation can continue without thumbnail
+            return None
 
 # Async wrapper function for compatibility with existing code
 async def compose_video(request_data) -> Dict[str, Any]:

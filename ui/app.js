@@ -671,9 +671,24 @@ class VideoMaker {
                 </div>
 
                 <div class="download-section">
-                    <button class="download-btn" onclick="window.location.href='${downloadUrl}'">
-                        📥 Download Final Video
-                    </button>
+                    ${finalization.thumbnail_url ? `
+                        <div class="thumbnail-preview">
+                            <h5>📸 Auto-Generated Thumbnail</h5>
+                            <img src="${finalization.thumbnail_url}" alt="Video Thumbnail" class="thumbnail-image">
+                            <p class="thumbnail-info">1280×720 JPG thumbnail created automatically</p>
+                        </div>
+                    ` : ''}
+
+                    <div class="download-buttons">
+                        <button class="download-btn primary" onclick="window.location.href='${downloadUrl}'">
+                            📥 Download Video (MP4)
+                        </button>
+                        ${finalization.thumbnail_url ? `
+                            <button class="download-btn secondary" onclick="window.location.href='/download-thumbnail/${finalization.thumbnail_url.split('/').pop()}'">
+                                🖼️ Download Thumbnail (JPG)
+                            </button>
+                        ` : ''}
+                    </div>
                 </div>
             </div>
         `;
@@ -1100,14 +1115,55 @@ class VideoMaker {
         }
     }
 
-    downloadVideoFile(videoUrl) {
-        // Trigger download
-        const a = document.createElement('a');
-        a.href = videoUrl;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+    downloadVideoFile(videoUrl, thumbnailUrl = null) {
+        // Show download success with thumbnail if available
+        if (thumbnailUrl) {
+            this.showDownloadSuccess(videoUrl, thumbnailUrl);
+        } else {
+            // Trigger direct download
+            const a = document.createElement('a');
+            a.href = videoUrl;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    }
+
+    showDownloadSuccess(videoUrl, thumbnailUrl) {
+        // Create a simple success message with download options
+        const message = `
+            Video ready for download!
+
+            📥 Video: ${videoUrl}
+            🖼️ Thumbnail: ${thumbnailUrl || 'Generated automatically'}
+
+            Click OK to download the video.
+        `;
+
+        if (confirm(message)) {
+            // Download video
+            const a = document.createElement('a');
+            a.href = videoUrl;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // Optionally download thumbnail after a delay
+            if (thumbnailUrl) {
+                setTimeout(() => {
+                    if (confirm('Download thumbnail as well?')) {
+                        const thumbA = document.createElement('a');
+                        thumbA.href = `/download-thumbnail/${thumbnailUrl.split('/').pop()}`;
+                        thumbA.style.display = 'none';
+                        document.body.appendChild(thumbA);
+                        thumbA.click();
+                        document.body.removeChild(thumbA);
+                    }
+                }, 1000);
+            }
+        }
     }
 
     stripMarkdown(text) {
