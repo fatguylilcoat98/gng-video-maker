@@ -1,7 +1,7 @@
-# GNG Video Maker Dependencies - NO PYDANTIC-CORE
-fastapi==0.100.0
+# GNG Video Maker Dependencies - Compatible Pydantic v1 Stack
+fastapi==0.95.2
 pydantic==1.10.12
-uvicorn==0.23.2
+uvicorn==0.22.0
 httpx==0.24.1
 python-multipart==0.0.6
 aiofiles==23.2.1
