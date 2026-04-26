@@ -44,11 +44,18 @@ async def generate_voice(
     """
     logger.info(f"Generating voice for {len(segments)} segments with {voice_style} style")
 
-    if not ELEVENLABS_API_KEY:
-        logger.warning("ELEVENLABS_API_KEY not found, creating mock voice segments")
+    # Check API key at runtime, not import time
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+
+    logger.info(f"Runtime API key check: {'SET' if api_key else 'NOT SET'} ({len(api_key or '')} chars)")
+    logger.info(f"Runtime Voice ID check: {'SET' if voice_id else 'NOT SET'} ({voice_id or 'none'})")
+
+    if not api_key:
+        logger.warning("ELEVENLABS_API_KEY not found at runtime, creating mock voice segments")
         return create_mock_voice_segments(segments)
 
-    logger.info(f"Using ElevenLabs API with {'custom' if CUSTOM_VOICE_ID else 'default'} voice ID")
+    logger.info(f"Using ElevenLabs API with {'custom' if voice_id else 'default'} voice ID")
 
     voice_segments = []
 
@@ -56,7 +63,7 @@ async def generate_voice(
         try:
             logger.info(f"Generating voice for segment {i+1}/{len(segments)}: {segment.title}")
 
-            voice_segment = await generate_segment_voice(segment, voice_style)
+            voice_segment = await generate_segment_voice(segment, voice_style, api_key, voice_id)
             voice_segments.append(voice_segment)
 
             # Small delay between requests to avoid rate limiting
@@ -73,14 +80,16 @@ async def generate_voice(
 
 async def generate_segment_voice(
     segment: PresentationSegment,
-    voice_style: str
+    voice_style: str,
+    api_key: str,
+    custom_voice_id: str = None
 ) -> VoiceSegment:
     """
     Generate voice for a single segment
     """
     # Use custom voice ID if provided, otherwise use style mappings
-    if CUSTOM_VOICE_ID:
-        voice_id = CUSTOM_VOICE_ID
+    if custom_voice_id:
+        voice_id = custom_voice_id
         logger.info(f"Using custom voice ID: {voice_id}")
     else:
         voice_id = VOICE_MAPPINGS.get(voice_style, VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
@@ -92,7 +101,7 @@ async def generate_segment_voice(
     headers = {
         "Accept": "audio/mpeg",
         "Content-Type": "application/json",
-        "xi-api-key": ELEVENLABS_API_KEY
+        "xi-api-key": api_key
     }
 
     data = {
