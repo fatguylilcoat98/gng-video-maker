@@ -5,15 +5,23 @@
 
 FROM python:3.11-slim
 
-# Install system dependencies including FFmpeg
+# Install system dependencies including FFmpeg and build tools
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    build-essential \
     libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    libjpeg-dev \
+    zlib1g-dev \
+    libfreetype6-dev \
+    liblcms2-dev \
+    libopenjp2-7-dev \
+    libtiff5-dev \
+    libwebp-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
