@@ -216,16 +216,12 @@ class VideoMaker {
 
             this.updateProgress(status.progress);
 
-            // Check for summarization and add special styling
-            if (status.message.toLowerCase().includes('summarizing')) {
-                this.elements.statusMessage.innerHTML = `<span class="summary-indicator">🧠</span> ${status.message}`;
-                this.elements.statusMessage.classList.add('summary-mode');
-                this.showSummaryInfo();
-            } else {
-                this.elements.statusMessage.textContent = status.message;
-                this.elements.statusMessage.classList.remove('summary-mode');
-                this.hideSummaryInfo();
+            // Show summarization indicator if needed
+            if (status.summarization && !this.elements.statusMessage.classList.contains('summarization-mode')) {
+                this.elements.statusMessage.classList.add('summarization-mode');
             }
+
+            this.elements.statusMessage.textContent = status.message;
 
             if (status.status === 'completed') {
                 this.loadPresentation(`/presentation/${this.currentJobId}`);
@@ -248,6 +244,11 @@ class VideoMaker {
             const presentationData = await response.json();
 
             this.currentPresentation = presentationData.presentation;
+            this.presentationMetadata = {
+                was_summarized: presentationData.was_summarized,
+                summary_reason: presentationData.summary_reason
+            };
+
             this.hideStatusSection();
             this.showPresenterSection();
             this.setupPresentation();
@@ -263,11 +264,17 @@ class VideoMaker {
 
         this.currentSegmentIndex = 0;
 
-        // Update script info
-        this.elements.scriptInfo.innerHTML = `
+        // Update script info with summarization indicator
+        let scriptInfo = `
             <span>${this.currentPresentation.segments.length} segments</span>
             <span>${Math.round(this.currentPresentation.total_duration)}s total</span>
         `;
+
+        if (this.presentationMetadata && this.presentationMetadata.was_summarized) {
+            scriptInfo += `<span class="summarized-indicator">📝 Key moments extracted</span>`;
+        }
+
+        this.elements.scriptInfo.innerHTML = scriptInfo;
 
         // Load first segment
         this.loadSegment(0);
@@ -438,7 +445,6 @@ class VideoMaker {
     hideStatusSection() {
         this.elements.statusSection.style.display = 'none';
         this.setProcessingState(false);
-        this.hideSummaryInfo();
     }
 
     showPresenterSection() {
@@ -449,42 +455,6 @@ class VideoMaker {
         this.setProcessingState(false);
         alert(message); // Replace with better error UI later
         console.error(message);
-    }
-
-    showSummaryInfo() {
-        // Create or show summary info card
-        let infoCard = document.querySelector('.summary-info-card');
-        if (!infoCard) {
-            infoCard = document.createElement('div');
-            infoCard.className = 'summary-info-card';
-            infoCard.innerHTML = `
-                <div class="summary-info-content">
-                    <div class="summary-info-header">
-                        <span class="summary-info-icon">📝</span>
-                        <span class="summary-info-title">Content Summarization</span>
-                    </div>
-                    <p class="summary-info-text">
-                        Your transcript is longer than optimal for the selected video format.
-                        We're extracting the 5 most important moments to create an engaging video.
-                    </p>
-                </div>
-            `;
-
-            // Insert after status section
-            const statusSection = this.elements.statusSection;
-            statusSection.parentNode.insertBefore(infoCard, statusSection.nextSibling);
-        }
-
-        infoCard.style.display = 'block';
-        setTimeout(() => infoCard.classList.add('visible'), 100);
-    }
-
-    hideSummaryInfo() {
-        const infoCard = document.querySelector('.summary-info-card');
-        if (infoCard) {
-            infoCard.classList.remove('visible');
-            setTimeout(() => infoCard.style.display = 'none', 300);
-        }
     }
 
     // Export Functions

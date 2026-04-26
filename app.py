@@ -56,30 +56,37 @@ def process_transcript_background(job_id, transcript, title, voice_style, video_
     try:
         logger.info(f"Starting transcript processing for job {job_id}")
 
-        # Progress callback for transcript processing
-        async def transcript_progress_callback(message):
-            processing_jobs[job_id]["message"] = message
-            if "summarizing" in message.lower():
-                processing_jobs[job_id]["progress"] = 10
-            elif "summarization complete" in message.lower():
-                processing_jobs[job_id]["progress"] = 20
-            elif "analyzing" in message.lower():
-                processing_jobs[job_id]["progress"] = 20
+        # Check if we need summarization first
+        from modules.transcript_processor import check_transcript_length
+        needs_summarization, summary_reason = check_transcript_length(transcript, video_mode)
+
+        if needs_summarization:
+            processing_jobs[job_id]["progress"] = 10
+            processing_jobs[job_id]["message"] = "Long content detected — summarizing to key moments..."
+            processing_jobs[job_id]["summarization"] = True
+            logger.info(f"Transcript needs summarization: {summary_reason}")
 
         # Step 1: Process transcript into structured segments
-        processing_jobs[job_id]["progress"] = 20
-        processing_jobs[job_id]["message"] = "Analyzing transcript structure..."
+        if needs_summarization:
+            processing_jobs[job_id]["progress"] = 30
+            processing_jobs[job_id]["message"] = "Processing key moments into segments..."
+        else:
+            processing_jobs[job_id]["progress"] = 20
+            processing_jobs[job_id]["message"] = "Analyzing transcript structure..."
 
-        segments = run_async_task(process_transcript, transcript, title, video_mode, transcript_progress_callback)
+        segments = run_async_task(process_transcript, transcript, title, video_mode)
 
         # Step 2: Generate voice narration for each segment
-        processing_jobs[job_id]["progress"] = 50
-        processing_jobs[job_id]["message"] = "Generating AI voiceover..."
+        processing_jobs[job_id]["progress"] = 60 if needs_summarization else 50
+        if needs_summarization:
+            processing_jobs[job_id]["message"] = "Generating AI voiceover for key moments..."
+        else:
+            processing_jobs[job_id]["message"] = "Generating AI voiceover..."
 
         voice_segments = run_async_task(generate_voice, segments, voice_style)
 
         # Step 3: Build presentation structure
-        processing_jobs[job_id]["progress"] = 80
+        processing_jobs[job_id]["progress"] = 85 if needs_summarization else 80
         processing_jobs[job_id]["message"] = "Building presentation..."
 
         presentation = run_async_task(build_presentation, segments, voice_segments, video_mode)
@@ -117,11 +124,17 @@ def process_transcript_background(job_id, transcript, title, voice_style, video_
         # Step 4: Prepare final composition
         processing_jobs[job_id]["progress"] = 100
         processing_jobs[job_id]["status"] = "completed"
-        processing_jobs[job_id]["message"] = "Processing complete!"
+        if needs_summarization:
+            processing_jobs[job_id]["message"] = "Summarized presentation complete!"
+        else:
+            processing_jobs[job_id]["message"] = "Processing complete!"
+
         processing_jobs[job_id]["result"] = {
             "presentation": presentation_dict,
             "total_duration": sum(vs.duration for vs in voice_segments),
-            "segment_count": len(segments)
+            "segment_count": len(segments),
+            "was_summarized": needs_summarization,
+            "summary_reason": summary_reason if needs_summarization else None
         }
 
         logger.info(f"Completed processing for job {job_id}")
