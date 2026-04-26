@@ -2,7 +2,9 @@ services:
   - type: web
     name: gng-video-maker
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
     startCommand: python app.py
     plan: free
     envVars:
@@ -12,3 +14,5 @@ services:
         sync: false
       - key: PORT
         value: 8000
+      - key: PYTHONUNBUFFERED
+        value: "1"
