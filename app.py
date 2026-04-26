@@ -51,7 +51,7 @@ def run_async_task(async_func, *args, **kwargs):
     finally:
         loop.close()
 
-def process_transcript_background(job_id, transcript, title, voice_style):
+def process_transcript_background(job_id, transcript, title, voice_style, video_mode="standard"):
     """Background function to process transcript"""
     try:
         logger.info(f"Starting transcript processing for job {job_id}")
@@ -60,7 +60,7 @@ def process_transcript_background(job_id, transcript, title, voice_style):
         processing_jobs[job_id]["progress"] = 20
         processing_jobs[job_id]["message"] = "Analyzing transcript structure..."
 
-        segments = run_async_task(process_transcript, transcript, title)
+        segments = run_async_task(process_transcript, transcript, title, video_mode)
 
         # Step 2: Generate voice narration for each segment
         processing_jobs[job_id]["progress"] = 50
@@ -72,7 +72,7 @@ def process_transcript_background(job_id, transcript, title, voice_style):
         processing_jobs[job_id]["progress"] = 80
         processing_jobs[job_id]["message"] = "Building presentation..."
 
-        presentation = run_async_task(build_presentation, segments, voice_segments)
+        presentation = run_async_task(build_presentation, segments, voice_segments, video_mode)
 
         # Convert presentation to dictionary for JSON serialization
         presentation_dict = {
@@ -186,6 +186,7 @@ def process_transcript_endpoint():
     transcript = data["transcript"]
     title = data.get("title")
     voice_style = data.get("voice_style", "professional")
+    video_mode = data.get("video_mode", "standard")
 
     job_id = f"job_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
 
@@ -200,7 +201,7 @@ def process_transcript_endpoint():
     # Start background processing
     thread = threading.Thread(
         target=process_transcript_background,
-        args=(job_id, transcript, title, voice_style)
+        args=(job_id, transcript, title, voice_style, video_mode)
     )
     thread.daemon = True
     thread.start()

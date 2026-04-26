@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 
 async def build_presentation(
     segments: List[PresentationSegment],
-    voice_segments: List[VoiceSegment]
+    voice_segments: List[VoiceSegment],
+    video_mode: str = "standard"
 ) -> PresentationData:
     """
     Build the final presentation structure combining content and voice
@@ -52,6 +53,7 @@ async def build_presentation(
         "created_at": datetime.now().isoformat(),
         "total_segments": len(segments),
         "voice_style": voice_segments[0].voice_settings.get("style", "professional") if voice_segments else "unknown",
+        "video_mode": video_mode,
         "estimated_file_size": estimate_presentation_size(segments, voice_segments),
         "themes": extract_key_themes(segments),
         "structure_analysis": analyze_presentation_structure(segments)

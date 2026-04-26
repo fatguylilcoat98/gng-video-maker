@@ -20,8 +20,10 @@ import json
 logger = logging.getLogger(__name__)
 
 # Video specifications
-VIDEO_WIDTH = 1920
-VIDEO_HEIGHT = 1080
+STANDARD_WIDTH = 1920
+STANDARD_HEIGHT = 1080
+SHORTS_WIDTH = 1080
+SHORTS_HEIGHT = 1920
 VIDEO_FPS = 30
 
 # GNG Color scheme
@@ -31,8 +33,8 @@ ACCENT_GOLD = "#c8a96e"
 ACCENT_GREEN = "#7ec8a9"
 TEXT_MUTED = "#888888"
 
-# Font configurations (fallback to system fonts)
-FONT_CONFIGS = {
+# Base font configurations (will be scaled based on mode)
+BASE_FONT_CONFIGS = {
     "title": {"size": 72, "family": "arial"},
     "main": {"size": 48, "family": "arial"},
     "subtitle": {"size": 36, "family": "arial"},
@@ -41,8 +43,19 @@ FONT_CONFIGS = {
 }
 
 class VideoComposer:
-    def __init__(self):
+    def __init__(self, video_mode="standard"):
         self.temp_files = []
+        self.video_mode = video_mode
+
+        # Set dimensions based on video mode
+        if video_mode == "shorts":
+            self.width = SHORTS_WIDTH
+            self.height = SHORTS_HEIGHT
+            self.font_scale = 1.3  # Larger text for mobile viewing
+        else:
+            self.width = STANDARD_WIDTH
+            self.height = STANDARD_HEIGHT
+            self.font_scale = 1.0
 
     def cleanup(self):
         """Clean up temporary files"""
@@ -55,26 +68,27 @@ class VideoComposer:
         self.temp_files = []
 
     def get_font(self, font_type: str):
-        """Get font with fallback handling"""
-        config = FONT_CONFIGS.get(font_type, FONT_CONFIGS["main"])
+        """Get font with fallback handling and mode-based scaling"""
+        base_config = BASE_FONT_CONFIGS.get(font_type, BASE_FONT_CONFIGS["main"])
+        scaled_size = int(base_config["size"] * self.font_scale)
 
         # Try to load custom font, fall back to default
         font_paths = [
-            f"/System/Library/Fonts/{config['family']}.ttf",  # macOS
-            f"C:/Windows/Fonts/{config['family']}.ttf",       # Windows
-            f"/usr/share/fonts/truetype/{config['family']}.ttf"  # Linux
+            f"/System/Library/Fonts/{base_config['family']}.ttf",  # macOS
+            f"C:/Windows/Fonts/{base_config['family']}.ttf",       # Windows
+            f"/usr/share/fonts/truetype/{base_config['family']}.ttf"  # Linux
         ]
 
         for font_path in font_paths:
             try:
                 if os.path.exists(font_path):
-                    return ImageFont.truetype(font_path, config["size"])
+                    return ImageFont.truetype(font_path, scaled_size)
             except Exception:
                 continue
 
         # Ultimate fallback to default font
         try:
-            return ImageFont.truetype("arial.ttf", config["size"])
+            return ImageFont.truetype("arial.ttf", scaled_size)
         except Exception:
             return ImageFont.load_default()
 
@@ -86,7 +100,7 @@ class VideoComposer:
     def draw_text_centered(self, draw, text: str, y_position: int, font, color: str, max_width: int = None):
         """Draw text centered horizontally with word wrapping"""
         if max_width is None:
-            max_width = VIDEO_WIDTH - 200  # Default padding
+            max_width = self.width - 200  # Default padding
 
         # Word wrap if needed
         words = text.split()
@@ -121,30 +135,36 @@ class VideoComposer:
         for i, line in enumerate(lines):
             bbox = draw.textbbox((0, 0), line, font=font)
             line_width = bbox[2] - bbox[0]
-            x = (VIDEO_WIDTH - line_width) // 2
+            x = (self.width - line_width) // 2
             y = start_y + (i * line_height)
             draw.text((x, y), line, font=font, fill=color_rgb)
 
     def create_intro_frame(self, title: str, author: str = None) -> str:
         """Create intro slide"""
-        img = Image.new('RGB', (VIDEO_WIDTH, VIDEO_HEIGHT), self.hex_to_rgb(BACKGROUND_COLOR))
+        img = Image.new('RGB', (self.width, self.height), self.hex_to_rgb(BACKGROUND_COLOR))
         draw = ImageDraw.Draw(img)
+
+        # Adjust positioning based on aspect ratio
+        center_y = self.height // 2
+        title_offset = -100 if self.video_mode == "standard" else -150
 
         # Title
         title_font = self.get_font("title")
-        self.draw_text_centered(draw, title, VIDEO_HEIGHT // 2 - 100, title_font, TEXT_COLOR)
+        self.draw_text_centered(draw, title, center_y + title_offset, title_font, TEXT_COLOR)
 
         # Gold accent line under title
-        line_y = VIDEO_HEIGHT // 2 + 50
-        line_width = 300
-        line_x = (VIDEO_WIDTH - line_width) // 2
-        draw.rectangle([line_x, line_y, line_x + line_width, line_y + 4],
+        line_y = center_y + title_offset + (100 if self.video_mode == "standard" else 150)
+        line_width = 300 if self.video_mode == "standard" else 400
+        line_x = (self.width - line_width) // 2
+        line_thickness = 4 if self.video_mode == "standard" else 6
+        draw.rectangle([line_x, line_y, line_x + line_width, line_y + line_thickness],
                       fill=self.hex_to_rgb(ACCENT_GOLD))
 
         # Author if provided
         if author:
             author_font = self.get_font("subtitle")
-            self.draw_text_centered(draw, f"by {author}", VIDEO_HEIGHT // 2 + 120, author_font, TEXT_MUTED)
+            author_offset = 120 if self.video_mode == "standard" else 200
+            self.draw_text_centered(draw, f"by {author}", center_y + author_offset, author_font, TEXT_MUTED)
 
         # Save frame
         frame_path = tempfile.mktemp(suffix='.png')
@@ -155,16 +175,20 @@ class VideoComposer:
 
     def create_outro_frame(self) -> str:
         """Create outro slide with GNG branding"""
-        img = Image.new('RGB', (VIDEO_WIDTH, VIDEO_HEIGHT), self.hex_to_rgb(BACKGROUND_COLOR))
+        img = Image.new('RGB', (self.width, self.height), self.hex_to_rgb(BACKGROUND_COLOR))
         draw = ImageDraw.Draw(img)
+
+        center_y = self.height // 2
 
         # Main GNG text
         title_font = self.get_font("title")
-        self.draw_text_centered(draw, "The Good Neighbor Guard", VIDEO_HEIGHT // 2 - 100, title_font, TEXT_COLOR)
+        main_text = "Good Neighbor Guard" if self.video_mode == "shorts" else "The Good Neighbor Guard"
+        self.draw_text_centered(draw, main_text, center_y - 100, title_font, TEXT_COLOR)
 
         # Tagline
         subtitle_font = self.get_font("main")
-        self.draw_text_centered(draw, "Truth · Safety · We Got Your Back", VIDEO_HEIGHT // 2 + 50, subtitle_font, ACCENT_GREEN)
+        tagline = "Truth · Safety · We Got Your Back" if self.video_mode == "standard" else "Truth • Safety • We Got Your Back"
+        self.draw_text_centered(draw, tagline, center_y + 50, subtitle_font, ACCENT_GREEN)
 
         # Save frame
         frame_path = tempfile.mktemp(suffix='.png')
@@ -175,36 +199,50 @@ class VideoComposer:
 
     def create_segment_frame_from_dict(self, segment_dict: Dict, segment_number: int) -> str:
         """Create frame from segment dictionary (for JSON compatibility)"""
-        img = Image.new('RGB', (VIDEO_WIDTH, VIDEO_HEIGHT), self.hex_to_rgb(BACKGROUND_COLOR))
+        img = Image.new('RGB', (self.width, self.height), self.hex_to_rgb(BACKGROUND_COLOR))
         draw = ImageDraw.Draw(img)
 
-        # Segment number (bottom left)
+        # Segment number (bottom area, adjusted for mode)
         mono_font = self.get_font("mono")
         number_text = f"Segment {segment_number}"
-        draw.text((50, VIDEO_HEIGHT - 80), number_text, font=mono_font, fill=self.hex_to_rgb(TEXT_MUTED))
+        number_y = self.height - (80 if self.video_mode == "standard" else 120)
+        draw.text((50, number_y), number_text, font=mono_font, fill=self.hex_to_rgb(TEXT_MUTED))
 
         # Determine accent color
         accent_color = ACCENT_GOLD
         if segment_dict.get("type") == "emphasis" or segment_dict.get("emphasis_level", 3) >= 4:
             accent_color = ACCENT_GREEN
 
-        # Title
+        # Title positioning (adjusted for aspect ratio)
         title_font = self.get_font("main")
-        title_y = VIDEO_HEIGHT // 3
+        if self.video_mode == "shorts":
+            title_y = self.height // 4  # Higher on vertical layout
+        else:
+            title_y = self.height // 3
+
         title = segment_dict.get("title", "Segment")
         self.draw_text_centered(draw, title, title_y, title_font, TEXT_COLOR)
 
-        # Accent line
-        line_y = title_y + 80
-        line_width = min(400, len(title) * 8)
-        line_x = (VIDEO_WIDTH - line_width) // 2
-        draw.rectangle([line_x, line_y, line_x + line_width, line_y + 3],
+        # Accent line (adjusted size for mode)
+        line_y = title_y + (80 if self.video_mode == "standard" else 120)
+        line_width = min(400 if self.video_mode == "standard" else 500, len(title) * 8)
+        line_x = (self.width - line_width) // 2
+        line_thickness = 3 if self.video_mode == "standard" else 5
+        draw.rectangle([line_x, line_y, line_x + line_width, line_y + line_thickness],
                       fill=self.hex_to_rgb(accent_color))
 
-        # Main text
+        # Main text (adjusted positioning and width)
         main_font = self.get_font("subtitle")
         narration = self.clean_markdown(segment_dict.get("narration_text", ""))
-        self.draw_text_centered(draw, narration, VIDEO_HEIGHT // 2 + 100, main_font, TEXT_COLOR, max_width=1400)
+
+        if self.video_mode == "shorts":
+            text_y = self.height // 2
+            max_text_width = self.width - 100  # Narrower padding for mobile
+        else:
+            text_y = self.height // 2 + 100
+            max_text_width = self.width - 200  # Standard padding
+
+        self.draw_text_centered(draw, narration, text_y, main_font, TEXT_COLOR, max_width=max_text_width)
 
         # Save frame
         frame_path = tempfile.mktemp(suffix='.png')
@@ -318,9 +356,10 @@ class VideoComposer:
                 "duration": sum(durations),
                 "file_size": file_size,
                 "metadata": {
-                    "resolution": f"{VIDEO_WIDTH}x{VIDEO_HEIGHT}",
+                    "resolution": f"{self.width}x{self.height}",
                     "fps": VIDEO_FPS,
                     "segments_count": len(segments),
+                    "video_mode": self.video_mode,
                     "generated_at": datetime.now().isoformat()
                 }
             }
@@ -372,7 +411,7 @@ class VideoComposer:
                             acodec='aac',
                             pix_fmt='yuv420p',
                             r=VIDEO_FPS,
-                            s=f'{VIDEO_WIDTH}x{VIDEO_HEIGHT}',
+                            s=f'{self.width}x{self.height}',
                             shortest=None
                         )
                         .overwrite_output()
@@ -401,21 +440,24 @@ async def compose_video(request_data) -> Dict[str, Any]:
     """
     Main entry point for video composition
     """
-    composer = VideoComposer()
+    # Handle both object-style and dict-style input
+    if hasattr(request_data, '__dict__'):
+        # Convert object to dict
+        request_dict = request_data.__dict__
+    else:
+        request_dict = request_data
+
+    # Extract presentation data and video mode
+    presentation_data = request_dict.get('presentation_data')
+    if not presentation_data:
+        raise Exception("No presentation data provided")
+
+    # Get video mode from presentation metadata or default to standard
+    video_mode = presentation_data.get('metadata', {}).get('video_mode', 'standard')
+
+    composer = VideoComposer(video_mode=video_mode)
 
     try:
-        # Handle both object-style and dict-style input
-        if hasattr(request_data, '__dict__'):
-            # Convert object to dict
-            request_dict = request_data.__dict__
-        else:
-            request_dict = request_data
-
-        # Extract presentation data
-        presentation_data = request_dict.get('presentation_data')
-        if not presentation_data:
-            raise Exception("No presentation data provided")
-
         result = await composer.compose_video(presentation_data)
         return result
 

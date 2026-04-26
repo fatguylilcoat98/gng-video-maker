@@ -14,6 +14,7 @@ class VideoMaker {
             transcriptInput: document.getElementById('transcriptInput'),
             titleInput: document.getElementById('titleInput'),
             voiceStyle: document.getElementById('voiceStyle'),
+            videoModeInputs: document.querySelectorAll('input[name="videoMode"]'),
             processButton: document.getElementById('processButton'),
             btnText: document.querySelector('.btn-text'),
             btnLoader: document.querySelector('.btn-loader'),
@@ -166,10 +167,14 @@ class VideoMaker {
         this.setProcessingState(true);
         this.showStatusSection();
 
+        // Get selected video mode
+        const selectedMode = Array.from(this.elements.videoModeInputs).find(input => input.checked)?.value || 'standard';
+
         const requestData = {
             transcript: transcript,
             title: this.elements.titleInput.value || 'GNG Presentation',
-            voice_style: this.elements.voiceStyle.value
+            voice_style: this.elements.voiceStyle.value,
+            video_mode: selectedMode
         };
 
         try {

@@ -84,6 +84,35 @@
                                     <option value="dramatic">Dramatic</option>
                                 </select>
                             </div>
+
+                            <div class="option-group">
+                                <label class="input-label">Video Mode:</label>
+                                <div class="video-mode-selector">
+                                    <div class="mode-option">
+                                        <input type="radio" id="modeStandard" name="videoMode" value="standard" checked>
+                                        <label for="modeStandard" class="mode-label">
+                                            <div class="mode-icon">🎬</div>
+                                            <div class="mode-details">
+                                                <span class="mode-title">Standard</span>
+                                                <span class="mode-description">16:9 • Up to 3 min • 8 segments</span>
+                                                <span class="mode-platform">YouTube, presentations</span>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    <div class="mode-option">
+                                        <input type="radio" id="modeShorts" name="videoMode" value="shorts">
+                                        <label for="modeShorts" class="mode-label">
+                                            <div class="mode-icon">📱</div>
+                                            <div class="mode-details">
+                                                <span class="mode-title">Shorts</span>
+                                                <span class="mode-description">9:16 • Up to 60s • 3 segments</span>
+                                                <span class="mode-platform">TikTok, YouTube Shorts</span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <button id="processButton" class="process-btn">

@@ -337,6 +337,95 @@ body::before {
     box-shadow: 0 0 0 2px var(--glow-blue);
 }
 
+/* Video Mode Selector */
+.video-mode-selector {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.mode-option {
+    flex: 1;
+    position: relative;
+}
+
+.mode-option input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mode-label {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--surface-darker);
+    border: 2px solid var(--border-subtle);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 100%;
+}
+
+.mode-label:hover {
+    border-color: var(--primary-blue);
+    background: rgba(0, 212, 255, 0.05);
+}
+
+.mode-option input[type="radio"]:checked + .mode-label {
+    border-color: var(--primary-blue);
+    background: rgba(0, 212, 255, 0.1);
+    box-shadow: 0 0 0 2px var(--glow-blue);
+}
+
+.mode-icon {
+    font-size: 2rem;
+    line-height: 1;
+    min-width: 2rem;
+    text-align: center;
+}
+
+.mode-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+}
+
+.mode-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.mode-description {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-family: 'DM Mono', monospace;
+}
+
+.mode-platform {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+@media (max-width: 768px) {
+    .video-mode-selector {
+        flex-direction: column;
+    }
+
+    .mode-label {
+        gap: 0.75rem;
+        padding: 0.75rem;
+    }
+
+    .mode-icon {
+        font-size: 1.5rem;
+    }
+}
+
 /* Buttons */
 .process-btn, .export-btn {
     background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-orange) 100%);

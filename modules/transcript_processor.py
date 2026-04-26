@@ -25,6 +25,10 @@ TRANSCRIPT:
 
 TITLE: {title}
 
+VIDEO MODE: {video_mode}
+
+{mode_constraints}
+
 Your task is to:
 1. Identify the main themes and key points
 2. Structure the content into logical segments for video presentation
@@ -35,6 +39,7 @@ Your task is to:
 
 CRITICAL: The introduction segment should be a proper welcome/overview, not just the first part of the transcript.
 CRITICAL: All narration_text should be clean, conversational, and free of markdown formatting.
+CRITICAL: Respect the video mode constraints for segment count and total duration.
 
 Return a JSON response with this exact structure:
 {{
@@ -70,7 +75,7 @@ Guidelines:
 - Write narration as if speaking directly to the viewer
 """
 
-async def process_transcript(transcript: str, title: Optional[str] = None) -> List[PresentationSegment]:
+async def process_transcript(transcript: str, title: Optional[str] = None, video_mode: str = "standard") -> List[PresentationSegment]:
     """
     Process a raw transcript into structured presentation segments
     """
@@ -82,11 +87,16 @@ async def process_transcript(transcript: str, title: Optional[str] = None) -> Li
     # Clean and prepare transcript
     cleaned_transcript = clean_transcript(transcript)
 
+    # Get mode-specific constraints
+    mode_constraints = get_mode_constraints(video_mode)
+
     try:
         # Call Anthropic API for analysis
         prompt = TRANSCRIPT_ANALYSIS_PROMPT.format(
             transcript=cleaned_transcript,
-            title=title
+            title=title,
+            video_mode=video_mode,
+            mode_constraints=mode_constraints
         )
 
         response = await call_anthropic_api(prompt)
@@ -115,12 +125,12 @@ async def process_transcript(transcript: str, title: Optional[str] = None) -> Li
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse transcript analysis JSON: {e}")
         # Fallback: create basic segments
-        return create_fallback_segments(cleaned_transcript, title)
+        return create_fallback_segments(cleaned_transcript, title, video_mode)
 
     except Exception as e:
         logger.error(f"Error processing transcript: {e}")
         # Fallback: create basic segments
-        return create_fallback_segments(cleaned_transcript, title)
+        return create_fallback_segments(cleaned_transcript, title, video_mode)
 
 def clean_transcript(transcript: str) -> str:
     """
@@ -144,21 +154,56 @@ def clean_transcript(transcript: str) -> str:
 
     return cleaned.strip()
 
-def create_fallback_segments(transcript: str, title: str) -> List[PresentationSegment]:
+def get_mode_constraints(video_mode: str) -> str:
+    """Get mode-specific constraints for the prompt"""
+    if video_mode == "shorts":
+        return """
+SHORTS MODE CONSTRAINTS:
+- Maximum 3 segments total (including intro/outro if any)
+- Total duration must not exceed 60 seconds
+- Each segment should be 15-20 seconds maximum
+- Text should be large, simple, and easy to read quickly
+- Focus on the most impactful points only
+- Optimized for mobile/vertical viewing
+"""
+    else:
+        return """
+STANDARD MODE CONSTRAINTS:
+- Maximum 8 segments total
+- Total duration should not exceed 180 seconds (3 minutes)
+- Each segment should be 10-30 seconds
+- Can include more detailed content and transitions
+- Optimized for horizontal/desktop viewing
+"""
+
+def create_fallback_segments(transcript: str, title: str, video_mode: str = "standard") -> List[PresentationSegment]:
     """
     Create basic segments if AI processing fails
     """
     logger.warning("Creating fallback segments due to processing failure")
 
-    # Split transcript into rough chunks
+    # Split transcript into rough chunks based on video mode
     sentences = transcript.split('. ')
-    chunk_size = max(2, len(sentences) // 5)  # Aim for ~5 segments
 
+    if video_mode == "shorts":
+        max_segments = 3
+        max_duration = 60
+        segment_duration = 20
+    else:
+        max_segments = 8
+        max_duration = 180
+        segment_duration = 22.5  # 180/8
+
+    chunk_size = max(2, len(sentences) // max_segments)
     segments = []
 
     # Introduction segment - create proper welcome instead of raw transcript
     intro_content = '. '.join(sentences[:chunk_size])
-    intro_narration = f"Welcome to {title}. In this presentation, we'll explore the key insights and ideas from this discussion. Let's begin."
+    if video_mode == "shorts":
+        intro_narration = f"Quick insights from {title}. Let's dive in!"
+    else:
+        intro_narration = f"Welcome to {title}. In this presentation, we'll explore the key insights and ideas from this discussion. Let's begin."
+
     segments.append(PresentationSegment(
         id="seg_001",
         type=SegmentType.INTRODUCTION,
@@ -166,12 +211,13 @@ def create_fallback_segments(transcript: str, title: str) -> List[PresentationSe
         content=intro_content,
         narration_text=intro_narration,
         visual_cues=["Title slide", "Presenter introduction"],
-        timing={"estimated_duration": 15.0},
+        timing={"estimated_duration": segment_duration},
         emphasis_level=3
     ))
 
-    # Main content segments
-    for i in range(1, min(4, len(sentences) // chunk_size)):
+    # Main content segments (respect max_segments limit)
+    max_main_segments = max_segments - 2 if max_segments > 2 else max_segments - 1  # Leave room for intro and possibly conclusion
+    for i in range(1, min(max_main_segments + 1, len(sentences) // chunk_size)):
         start_idx = i * chunk_size
         end_idx = min((i + 1) * chunk_size, len(sentences))
         content = '. '.join(sentences[start_idx:end_idx])
@@ -183,21 +229,22 @@ def create_fallback_segments(transcript: str, title: str) -> List[PresentationSe
             content=content,
             narration_text=content,
             visual_cues=["Supporting visuals", "Key point emphasis"],
-            timing={"estimated_duration": 20.0},
+            timing={"estimated_duration": segment_duration},
             emphasis_level=4
         ))
 
-    # Conclusion segment
-    if len(sentences) > chunk_size * 2:
+    # Conclusion segment (only if we have room and enough content)
+    if len(segments) < max_segments and len(sentences) > chunk_size * 2:
         conclusion_content = '. '.join(sentences[-chunk_size:])
+        conclusion_narration = "In conclusion, " + conclusion_content if video_mode != "shorts" else conclusion_content
         segments.append(PresentationSegment(
             id=f"seg_{len(segments)+1:03d}",
             type=SegmentType.CONCLUSION,
             title="Conclusion",
             content=conclusion_content,
-            narration_text="In conclusion, " + conclusion_content,
+            narration_text=conclusion_narration,
             visual_cues=["Summary slide", "Call to action"],
-            timing={"estimated_duration": 12.0},
+            timing={"estimated_duration": segment_duration},
             emphasis_level=3
         ))
 
