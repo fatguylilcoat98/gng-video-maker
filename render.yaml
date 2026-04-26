@@ -1,15 +1,29 @@
+# GNG Video Maker — Render Configuration
+# Built by Christopher Hughes · Sacramento, CA
+# Created with the help of AI collaborators (Claude · GPT · Gemini · Groq · Perplexity)
+# Truth · Safety · We Got Your Back
+
 services:
   - type: web
     name: gng-video-maker
-    env: python
-    runtime: python
-    pythonVersion: "3.11.0"
-    buildCommand: apt-get install -y ffmpeg && pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    env: docker
+    dockerfilePath: ./Dockerfile
+    region: oregon
+    plan: starter
+    buildCommand: echo "Building GNG Video Maker..."
+    startCommand: python -m flask run --host=0.0.0.0 --port=8000
     envVars:
-      - key: ANTHROPIC_API_KEY
-        sync: false
+      - key: FLASK_APP
+        value: app.py
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHONPATH
+        value: /app
+      - key: OPENAI_API_KEY
+        sync: false  # Set this in Render dashboard
       - key: ELEVENLABS_API_KEY
-        sync: false
+        sync: false  # Set this in Render dashboard (optional)
       - key: ELEVENLABS_VOICE_ID
-        sync: false
+        sync: false  # Set this in Render dashboard (optional)
+    healthCheckPath: /health
+    autoDeploy: true

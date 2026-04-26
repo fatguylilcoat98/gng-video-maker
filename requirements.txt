@@ -1,10 +1,24 @@
-flask==3.0.3
-flask-cors==4.0.1
-anthropic==0.34.2
-httpx==0.27.0
-requests==2.32.3
-python-dotenv==1.0.1
-gunicorn==22.0.0
-aiofiles==24.1.0
+# GNG Video Maker — Requirements
+# Built by Christopher Hughes · Sacramento, CA
+# Created with the help of AI collaborators (Claude · GPT · Gemini · Groq · Perplexity)
+# Truth · Safety · We Got Your Back
+
+# Core Flask application
+Flask==2.3.3
+Werkzeug==2.3.7
+flask-cors==4.0.0
+
+# Video processing
 ffmpeg-python==0.2.0
-Pillow==10.4.0
+Pillow==10.0.1
+
+# AI and API integrations
+openai==1.3.8
+httpx==0.25.2
+aiofiles==23.2.0
+
+# Data handling
+pydantic==2.5.0
+
+# Utilities
+python-dateutil==2.8.2

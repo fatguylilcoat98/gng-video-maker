@@ -20,19 +20,31 @@ from simple_schemas import PresentationSegment, VoiceSegment, VoiceStyle, VoiceC
 
 logger = logging.getLogger(__name__)
 
+# ElevenLabs configuration
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1"
-
-# Custom voice ID from environment (preferred) or fallback to defaults
 CUSTOM_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
-# Voice ID mappings for different styles (fallbacks if no custom voice ID)
-VOICE_MAPPINGS = {
+# OpenAI configuration
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_URL = "https://api.openai.com/v1/audio/speech"
+
+# ElevenLabs Voice ID mappings for different styles (fallbacks if no custom voice ID)
+ELEVENLABS_VOICE_MAPPINGS = {
     VoiceStyle.PROFESSIONAL: "21m00Tcm4TlvDq8ikWAM",  # Rachel
     VoiceStyle.CONVERSATIONAL: "AZnzlk1XvdvUeBnXmlld",  # Domi
     VoiceStyle.AUTHORITATIVE: "EXAVITQu4vr4xnSDxMaL",  # Bella
     VoiceStyle.FRIENDLY: "XrExE9yKIg1WjnnlVkGX",  # Matilda
     VoiceStyle.DRAMATIC: "onwK4e9ZLuTAKqWW03F9"   # Daniel
+}
+
+# OpenAI Voice mappings for different styles
+OPENAI_VOICE_MAPPINGS = {
+    VoiceStyle.PROFESSIONAL: "nova",      # Clear, professional tone
+    VoiceStyle.CONVERSATIONAL: "alloy",   # Friendly, conversational
+    VoiceStyle.AUTHORITATIVE: "echo",     # Authoritative, confident
+    VoiceStyle.FRIENDLY: "shimmer",       # Warm, friendly
+    VoiceStyle.DRAMATIC: "fable"          # Expressive, dramatic
 }
 
 async def generate_voice(
@@ -41,63 +53,67 @@ async def generate_voice(
 ) -> List[VoiceSegment]:
     """
     Generate voice narration for all presentation segments
+    Tries ElevenLabs first, then OpenAI as fallback, then mock audio
     """
     logger.info(f"Generating voice for {len(segments)} segments with {voice_style} style")
 
-    # Check API key at runtime, not import time
-    api_key = os.getenv("ELEVENLABS_API_KEY")
-    voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+    # Check available APIs
+    elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
 
-    logger.info(f"Runtime API key check: {'SET' if api_key else 'NOT SET'} ({len(api_key or '')} chars)")
-    logger.info(f"Runtime Voice ID check: {'SET' if voice_id else 'NOT SET'} ({voice_id or 'none'})")
-
-    if not api_key:
-        logger.warning("ELEVENLABS_API_KEY not found at runtime, creating mock voice segments")
-        return create_mock_voice_segments(segments)
-
-    logger.info(f"Using ElevenLabs API with {'custom' if voice_id else 'default'} voice ID")
+    logger.info(f"ElevenLabs API key: {'SET' if elevenlabs_key else 'NOT SET'}")
+    logger.info(f"OpenAI API key: {'SET' if openai_key else 'NOT SET'}")
 
     voice_segments = []
 
     for i, segment in enumerate(segments):
-        try:
-            logger.info(f"Generating voice for segment {i+1}/{len(segments)}: {segment.title}")
+        logger.info(f"Generating voice for segment {i+1}/{len(segments)}: {segment.title}")
 
-            voice_segment = await generate_segment_voice(segment, voice_style, api_key, voice_id)
-            voice_segments.append(voice_segment)
+        voice_segment = None
 
-            # Small delay between requests to avoid rate limiting
-            await asyncio.sleep(0.5)
+        # Try ElevenLabs first if available
+        if elevenlabs_key:
+            try:
+                voice_segment = await generate_elevenlabs_voice(segment, voice_style, elevenlabs_key)
+                logger.info(f"Successfully generated ElevenLabs voice for segment {segment.id}")
+            except Exception as e:
+                logger.warning(f"ElevenLabs failed for segment {segment.id}: {e}")
 
-        except Exception as e:
-            logger.error(f"Failed to generate voice for segment {segment.id}: {e}")
-            # Create fallback mock segment
-            mock_segment = create_mock_voice_segment(segment)
-            voice_segments.append(mock_segment)
+        # Try OpenAI if ElevenLabs failed or not available
+        if not voice_segment and openai_key:
+            try:
+                voice_segment = await generate_openai_voice(segment, voice_style, openai_key)
+                logger.info(f"Successfully generated OpenAI voice for segment {segment.id}")
+            except Exception as e:
+                logger.warning(f"OpenAI failed for segment {segment.id}: {e}")
+
+        # Fallback to mock if both failed
+        if not voice_segment:
+            logger.info(f"Using mock audio for segment {segment.id}")
+            voice_segment = create_mock_voice_segment(segment)
+
+        voice_segments.append(voice_segment)
+
+        # Small delay between requests
+        await asyncio.sleep(0.5)
 
     logger.info(f"Voice generation completed for {len(voice_segments)} segments")
     return voice_segments
 
-async def generate_segment_voice(
+async def generate_elevenlabs_voice(
     segment: PresentationSegment,
     voice_style: str,
-    api_key: str,
-    custom_voice_id: str = None
+    api_key: str
 ) -> VoiceSegment:
     """
     Generate voice for a single segment
     """
-    # Use custom voice ID if provided, otherwise use style mappings
-    if custom_voice_id:
-        voice_id = custom_voice_id
-        logger.info(f"Using custom voice ID: {voice_id}")
+    # Use default voices for free tier compatibility
+    if isinstance(voice_style, str):
+        voice_id = ELEVENLABS_VOICE_MAPPINGS.get(voice_style, ELEVENLABS_VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
     else:
-        # Fix: Handle both string and enum voice styles
-        if isinstance(voice_style, str):
-            voice_id = VOICE_MAPPINGS.get(voice_style, VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
-        else:
-            voice_id = VOICE_MAPPINGS.get(voice_style, VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
-        logger.info(f"Using default voice ID for {voice_style}: {voice_id}")
+        voice_id = ELEVENLABS_VOICE_MAPPINGS.get(voice_style, ELEVENLABS_VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
+    logger.info(f"Using ElevenLabs voice ID for {voice_style}: {voice_id}")
 
     # Configure voice settings based on segment type and emphasis
     voice_config = get_voice_config(segment, voice_style)
@@ -110,7 +126,7 @@ async def generate_segment_voice(
 
     data = {
         "text": segment.narration_text,
-        "model_id": "eleven_monolingual_v1",
+        "model_id": "eleven_turbo_v2_5",
         "voice_settings": {
             "stability": voice_config.stability,
             "similarity_boost": voice_config.similarity_boost,
@@ -178,7 +194,88 @@ async def generate_segment_voice(
             )
 
     except Exception as e:
-        logger.error(f"Error generating voice for segment {segment.id}: {e}")
+        logger.error(f"Error generating ElevenLabs voice for segment {segment.id}: {e}")
+        raise
+
+async def generate_openai_voice(
+    segment: PresentationSegment,
+    voice_style: str,
+    api_key: str
+) -> VoiceSegment:
+    """
+    Generate voice using OpenAI text-to-speech API
+    """
+    # Get OpenAI voice for style
+    if isinstance(voice_style, str):
+        voice_name = OPENAI_VOICE_MAPPINGS.get(voice_style, OPENAI_VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
+    else:
+        voice_name = OPENAI_VOICE_MAPPINGS.get(voice_style, OPENAI_VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
+
+    logger.info(f"Using OpenAI voice '{voice_name}' for {voice_style}")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "model": "tts-1",  # or "tts-1-hd" for higher quality
+        "input": segment.narration_text,
+        "voice": voice_name,
+        "response_format": "mp3"
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                OPENAI_API_URL,
+                headers=headers,
+                json=data
+            )
+
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"OpenAI API error {response.status_code}: {error_text}")
+                raise Exception(f"OpenAI API error: {response.status_code} - {error_text}")
+
+            # Validate response contains audio data
+            if len(response.content) < 1000:  # MP3 files should be at least 1KB
+                logger.error(f"OpenAI API returned suspiciously small response: {len(response.content)} bytes")
+                raise Exception(f"OpenAI API returned invalid audio data: {len(response.content)} bytes")
+
+            # Save audio file
+            audio_filename = f"openai_{segment.id}_{uuid.uuid4().hex[:8]}.mp3"
+            audio_path = f"static/audio/{audio_filename}"
+
+            # Ensure audio directory exists
+            os.makedirs("static/audio", exist_ok=True)
+
+            async with aiofiles.open(audio_path, "wb") as f:
+                await f.write(response.content)
+
+            # Validate saved file
+            if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+                raise Exception(f"Failed to save audio file or file is empty: {audio_path}")
+
+            logger.info(f"Successfully created OpenAI audio: {audio_path} ({os.path.getsize(audio_path)} bytes)")
+
+            # Estimate duration
+            estimated_duration = estimate_audio_duration(segment.narration_text)
+
+            return VoiceSegment(
+                segment_id=segment.id,
+                audio_url=f"/static/audio/{audio_filename}",
+                duration=estimated_duration,
+                voice_settings={
+                    "provider": "openai",
+                    "model": "tts-1",
+                    "voice": voice_name
+                },
+                generated_at=datetime.now().isoformat()
+            )
+
+    except Exception as e:
+        logger.error(f"Error generating OpenAI voice for segment {segment.id}: {e}")
         raise
 
 def get_voice_config(segment: PresentationSegment, voice_style: str) -> VoiceConfig:
