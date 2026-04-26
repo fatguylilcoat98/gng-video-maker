@@ -501,7 +501,7 @@ class VideoComposer:
             # Use FFmpeg to create silent audio
             cmd = (
                 ffmpeg
-                .input('anullsrc', format='lavfi', t=duration, sample_rate=22050)
+                .input('anullsrc=r=22050', format='lavfi', t=duration)
                 .output(output_path, acodec='pcm_s16le')
                 .overwrite_output()
             )
