@@ -290,10 +290,303 @@ class VideoAnalyzer:
             logger.error(f"Video analysis failed: {e}")
             raise
 
+    async def auto_trim_video(self, video_path: str, silence_periods: List[Dict[str, Any]],
+                              min_silence_duration: float = 3.0) -> str:
+        """
+        Auto-trim dead space and long pauses from video
+        """
+        try:
+            logger.info("Starting auto-trim of dead space and long pauses...")
+
+            # Filter silence periods that are worth removing (long enough)
+            significant_silence = [
+                s for s in silence_periods
+                if s['duration'] >= min_silence_duration
+            ]
+
+            if not significant_silence:
+                logger.info("No significant silence periods found - returning original video")
+                return video_path
+
+            # Create trimmed video path
+            base_name = os.path.splitext(os.path.basename(video_path))[0]
+            trimmed_path = tempfile.mktemp(suffix=f'_trimmed_{base_name}.mp4')
+            self.temp_files.append(trimmed_path)
+
+            # Get video info for duration
+            video_info = await self.get_video_info(video_path)
+            total_duration = video_info['duration']
+
+            # Create list of segments to keep (non-silent parts)
+            keep_segments = []
+            last_end = 0.0
+
+            for silence in significant_silence:
+                # Keep segment before this silence
+                if silence['start'] > last_end + 0.5:  # At least 0.5s of content
+                    keep_segments.append({
+                        'start': last_end,
+                        'end': silence['start']
+                    })
+
+                # Skip most of the silence, but keep a small pause for natural flow
+                natural_pause = min(1.0, silence['duration'] * 0.2)  # Keep 20% or 1s max
+                last_end = silence['end'] - natural_pause
+
+            # Add final segment if there's content after last silence
+            if last_end < total_duration - 0.5:
+                keep_segments.append({
+                    'start': last_end,
+                    'end': total_duration
+                })
+
+            if not keep_segments:
+                logger.warning("No segments to keep after silence removal")
+                return video_path
+
+            # Create segment files and concat list
+            concat_file = tempfile.mktemp(suffix='.txt')
+            self.temp_files.append(concat_file)
+
+            segment_files = []
+            with open(concat_file, 'w') as f:
+                for i, segment in enumerate(keep_segments):
+                    segment_file = tempfile.mktemp(suffix=f'_seg_{i}.mp4')
+                    self.temp_files.append(segment_file)
+                    segment_files.append(segment_file)
+
+                    # Extract segment
+                    duration = segment['end'] - segment['start']
+                    (
+                        ffmpeg
+                        .input(video_path, ss=segment['start'], t=duration)
+                        .output(
+                            segment_file,
+                            vcodec='libx264',
+                            acodec='aac',
+                            avoid_negative_ts='make_zero'
+                        )
+                        .overwrite_output()
+                        .run(quiet=True)
+                    )
+
+                    f.write(f"file '{segment_file}'\n")
+
+            # Concatenate all segments
+            (
+                ffmpeg
+                .input(concat_file, format='concat', safe=0)
+                .output(trimmed_path, c='copy')
+                .overwrite_output()
+                .run(quiet=True)
+            )
+
+            # Verify trimmed video was created
+            if not os.path.exists(trimmed_path):
+                raise Exception("Failed to create trimmed video")
+
+            trimmed_info = await self.get_video_info(trimmed_path)
+            time_saved = total_duration - trimmed_info['duration']
+
+            logger.info(f"Auto-trim complete: {time_saved:.1f}s removed, {trimmed_info['duration']:.1f}s remaining")
+
+            return trimmed_path
+
+        except Exception as e:
+            logger.error(f"Auto-trim failed: {e}")
+            raise
+
+    async def extract_audio_transcript(self, video_path: str) -> str:
+        """
+        Extract audio from video and create a basic transcript
+        """
+        try:
+            logger.info("Extracting audio for transcript generation...")
+
+            # Extract audio to WAV for better compatibility
+            audio_path = tempfile.mktemp(suffix='.wav')
+            self.temp_files.append(audio_path)
+
+            (
+                ffmpeg
+                .input(video_path)
+                .output(
+                    audio_path,
+                    acodec='pcm_s16le',
+                    ar=16000,  # 16kHz sample rate
+                    ac=1       # Mono
+                )
+                .overwrite_output()
+                .run(quiet=True)
+            )
+
+            # For now, we'll create a placeholder transcript
+            # In a full implementation, you'd use a speech-to-text service here
+            # Like OpenAI Whisper, Google Speech-to-Text, etc.
+
+            placeholder_transcript = """
+            [Audio extracted from video - Speech-to-text transcription would go here]
+
+            This is a placeholder transcript. In the full implementation, this would contain:
+            - Actual spoken words from the video audio
+            - Timestamps for speech segments
+            - Speaker identification if multiple voices
+            - Cleaned up text without filler words
+
+            The video analysis detected:
+            - Audio is present in the recording
+            - Multiple scene changes indicating content transitions
+            - Silence periods that were trimmed for better flow
+            """
+
+            logger.info("Audio extraction complete - transcript placeholder generated")
+            return placeholder_transcript.strip()
+
+        except Exception as e:
+            logger.error(f"Audio transcript extraction failed: {e}")
+            return "[Audio extraction failed - unable to generate transcript]"
+
+    async def generate_narration_script(self, video_analysis: Dict[str, Any],
+                                      extracted_transcript: str, title: str = None) -> Dict[str, Any]:
+        """
+        Generate a polished narration script from video content using Claude
+        """
+        try:
+            logger.info("Generating narration script from video content...")
+
+            if not title:
+                title = "Video Presentation"
+
+            # Prepare context for Claude
+            scene_count = len(video_analysis['scene_changes'])
+            silence_count = len(video_analysis['silence_periods'])
+            duration = video_analysis['video_info']['duration']
+
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+
+            prompt = f"""
+Analyze this video content and create a professional narration script for a polished presentation video.
+
+VIDEO CONTEXT:
+- Title: {title}
+- Duration: {minutes}:{seconds:02d}
+- Scene Changes: {scene_count} detected
+- Silence Periods: {silence_count} (auto-trimmed)
+- Resolution: {video_analysis['video_info']['width']}x{video_analysis['video_info']['height']}
+
+EXTRACTED CONTENT:
+{extracted_transcript}
+
+Your task is to create a compelling narration script that:
+1. Introduces the video content professionally
+2. Guides viewers through the key points
+3. Provides smooth transitions between scene changes
+4. Adds context and explanation where needed
+5. Concludes with a clear summary
+
+Return a JSON response with this exact structure:
+{{
+    "script_metadata": {{
+        "original_duration": {duration},
+        "scene_count": {scene_count},
+        "estimated_narration_duration": 120.0,
+        "script_style": "professional_voiceover"
+    }},
+    "narration_segments": [
+        {{
+            "segment_id": "intro",
+            "type": "introduction",
+            "title": "Introduction",
+            "narration_text": "Welcome to this presentation...",
+            "timing_cue": "At video start",
+            "emphasis_level": 3
+        }}
+    ],
+    "script_notes": {{
+        "tone": "Professional and engaging",
+        "pace": "Moderate with clear pauses",
+        "key_improvements": ["Added context", "Improved flow", "Clear structure"]
+    }}
+}}
+
+Guidelines:
+- Create 4-6 narration segments based on the scene changes
+- Each segment should be 15-30 seconds when narrated
+- Focus on clarity and engagement
+- Add value beyond just describing what's visible
+- Make it suitable for educational or professional content
+"""
+
+            # Call Claude API
+            from modules.llm_utils import call_anthropic_api
+            response = await call_anthropic_api(prompt)
+
+            # Parse response
+            import json
+            script_data = json.loads(response)
+
+            logger.info(f"Narration script generated with {len(script_data.get('narration_segments', []))} segments")
+            return script_data
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse narration script JSON: {e}")
+            # Return fallback script
+            return self._create_fallback_narration_script(video_analysis, title)
+
+        except Exception as e:
+            logger.error(f"Narration script generation failed: {e}")
+            return self._create_fallback_narration_script(video_analysis, title)
+
+    def _create_fallback_narration_script(self, video_analysis: Dict[str, Any], title: str) -> Dict[str, Any]:
+        """Create a basic fallback narration script"""
+        duration = video_analysis['video_info']['duration']
+        scene_count = len(video_analysis['scene_changes'])
+
+        return {
+            "script_metadata": {
+                "original_duration": duration,
+                "scene_count": scene_count,
+                "estimated_narration_duration": min(120.0, duration * 0.8),
+                "script_style": "fallback_narration"
+            },
+            "narration_segments": [
+                {
+                    "segment_id": "intro",
+                    "type": "introduction",
+                    "title": "Introduction",
+                    "narration_text": f"Welcome to {title}. This video contains valuable insights that we'll explore together.",
+                    "timing_cue": "At video start",
+                    "emphasis_level": 3
+                },
+                {
+                    "segment_id": "main",
+                    "type": "main_content",
+                    "title": "Main Content",
+                    "narration_text": f"This presentation covers {scene_count} main topics, with content automatically optimized for clarity and flow.",
+                    "timing_cue": "During main content",
+                    "emphasis_level": 4
+                },
+                {
+                    "segment_id": "conclusion",
+                    "type": "conclusion",
+                    "title": "Conclusion",
+                    "narration_text": "Thank you for watching. This concludes our presentation of the key insights.",
+                    "timing_cue": "At video end",
+                    "emphasis_level": 3
+                }
+            ],
+            "script_notes": {
+                "tone": "Professional",
+                "pace": "Moderate",
+                "key_improvements": ["Fallback script generated"]
+            }
+        }
+
 # Async wrapper function for Phase 3 compatibility
 async def analyze_uploaded_video(video_path: str) -> Dict[str, Any]:
     """
-    Main entry point for video analysis
+    Main entry point for video analysis (Steps 1-2)
     """
     analyzer = VideoAnalyzer()
 
@@ -306,6 +599,51 @@ async def analyze_uploaded_video(video_path: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Video analysis failed: {e}")
+        raise
+    finally:
+        analyzer.cleanup()
+
+async def process_video_content(video_path: str, analysis: Dict[str, Any], title: str = None) -> Dict[str, Any]:
+    """
+    Steps 3-4: Auto-trim video and generate narration script
+    """
+    analyzer = VideoAnalyzer()
+
+    try:
+        logger.info("Starting Steps 3-4: Auto-trim and script generation...")
+
+        # Step 3: Auto-trim dead space and long pauses
+        silence_periods = analysis.get('silence_periods', [])
+        trimmed_video_path = await analyzer.auto_trim_video(video_path, silence_periods)
+
+        # Step 4: Extract content and generate narration script
+        extracted_transcript = await analyzer.extract_audio_transcript(trimmed_video_path)
+        narration_script = await analyzer.generate_narration_script(analysis, extracted_transcript, title)
+
+        # Get info about trimmed video
+        trimmed_info = await analyzer.get_video_info(trimmed_video_path)
+
+        result = {
+            "original_video_path": video_path,
+            "trimmed_video_path": trimmed_video_path,
+            "original_duration": analysis['video_info']['duration'],
+            "trimmed_duration": trimmed_info['duration'],
+            "time_saved": analysis['video_info']['duration'] - trimmed_info['duration'],
+            "extracted_transcript": extracted_transcript,
+            "narration_script": narration_script,
+            "processing_metadata": {
+                "processed_at": datetime.now().isoformat(),
+                "silence_periods_removed": len([s for s in silence_periods if s['duration'] >= 3.0]),
+                "script_segments": len(narration_script.get('narration_segments', [])),
+                "phase": "content_processing_complete"
+            }
+        }
+
+        logger.info(f"Video content processing complete: {result['time_saved']:.1f}s trimmed, {len(narration_script.get('narration_segments', []))} script segments")
+        return result
+
+    except Exception as e:
+        logger.error(f"Video content processing failed: {e}")
         raise
     finally:
         analyzer.cleanup()

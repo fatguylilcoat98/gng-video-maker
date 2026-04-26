@@ -363,9 +363,165 @@ class VideoMaker {
         this.elements.continueToProcessingBtn.style.display = 'block';
     }
 
-    continueToContentExtraction() {
-        // Placeholder for next phase
-        alert('Phase 3 Step 3: Content Extraction coming next!');
+    async continueToContentExtraction() {
+        if (!this.currentJobId || !this.currentVideoAnalysis) {
+            this.showError('No video analysis data available');
+            return;
+        }
+
+        try {
+            // Update button to show processing
+            this.elements.continueToProcessingBtn.disabled = true;
+            this.elements.continueToProcessingBtn.textContent = 'Processing...';
+
+            // Get title for the video
+            const title = prompt('Enter a title for your video presentation:', 'Video Presentation') || 'Video Presentation';
+
+            // Start Steps 3-4: Auto-trim and script generation
+            const response = await fetch('/process-video-content', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    analysis_job_id: this.currentJobId,
+                    title: title
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Processing failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+            this.currentProcessingJobId = result.job_id;
+
+            // Show processing status and poll for results
+            this.showVideoProcessingStatus();
+            this.pollVideoProcessing();
+
+        } catch (error) {
+            console.error('Error starting video processing:', error);
+            this.showError('Failed to start video processing: ' + error.message);
+            this.elements.continueToProcessingBtn.disabled = false;
+            this.elements.continueToProcessingBtn.textContent = 'Continue to Content Extraction';
+        }
+    }
+
+    showVideoProcessingStatus() {
+        // Hide analysis results, show processing status
+        this.elements.videoAnalysisResults.style.display = 'none';
+        this.elements.videoUploadStatus.style.display = 'block';
+        this.updateVideoProgress(0, 'Starting video processing...');
+    }
+
+    async pollVideoProcessing() {
+        if (!this.currentProcessingJobId) return;
+
+        try {
+            const response = await fetch(`/video-processing/${this.currentProcessingJobId}`);
+            const data = await response.json();
+
+            if (data.status === 'completed') {
+                this.displayVideoProcessingResults(data.processing);
+            } else if (data.status === 'failed') {
+                this.showError('Video processing failed: ' + data.message);
+                this.resetToAnalysisResults();
+            } else {
+                // Update progress and continue polling
+                this.updateVideoProgress(data.progress || 50, data.message || 'Processing video...');
+                setTimeout(() => this.pollVideoProcessing(), 2000);
+            }
+
+        } catch (error) {
+            console.error('Error polling video processing:', error);
+            this.showError('Failed to get processing status');
+            this.resetToAnalysisResults();
+        }
+    }
+
+    displayVideoProcessingResults(processing) {
+        // Hide processing status
+        this.elements.videoUploadStatus.style.display = 'none';
+
+        // Show results
+        this.elements.videoAnalysisResults.style.display = 'block';
+        this.elements.analysisSummary.innerHTML = `
+            <h4>🎬 Video Processing Complete</h4>
+
+            <div class="processing-results">
+                <div class="result-section">
+                    <h5>📹 Auto-Trim Results</h5>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Original Duration:</span>
+                        <span class="analysis-value">${this.formatDuration(processing.original_duration)}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Trimmed Duration:</span>
+                        <span class="analysis-value">${this.formatDuration(processing.trimmed_duration)}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Time Saved:</span>
+                        <span class="analysis-value">${this.formatDuration(processing.time_saved)} removed</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Silence Periods Removed:</span>
+                        <span class="analysis-value">${processing.processing_metadata.silence_periods_removed}</span>
+                    </div>
+                </div>
+
+                <div class="result-section">
+                    <h5>📝 Narration Script</h5>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Script Segments:</span>
+                        <span class="analysis-value">${processing.processing_metadata.script_segments}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Estimated Duration:</span>
+                        <span class="analysis-value">${this.formatDuration(processing.narration_script.script_metadata.estimated_narration_duration)}</span>
+                    </div>
+                    <div class="analysis-item">
+                        <span class="analysis-label">Style:</span>
+                        <span class="analysis-value">${processing.narration_script.script_notes.tone}</span>
+                    </div>
+                </div>
+
+                <div class="script-preview">
+                    <h5>Script Preview</h5>
+                    <div class="script-segments">
+                        ${processing.narration_script.narration_segments.slice(0, 2).map(segment => `
+                            <div class="script-segment-preview">
+                                <strong>${segment.title}:</strong>
+                                <p>${segment.narration_text}</p>
+                            </div>
+                        `).join('')}
+                        ${processing.narration_script.narration_segments.length > 2 ? '<p><em>...and more segments</em></p>' : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Update button for next steps
+        this.elements.continueToProcessingBtn.style.display = 'block';
+        this.elements.continueToProcessingBtn.disabled = false;
+        this.elements.continueToProcessingBtn.textContent = 'Continue to Final Steps (5-6)';
+        this.elements.continueToProcessingBtn.onclick = () => {
+            alert('Phase 3 Steps 5-6 coming next!');
+        };
+    }
+
+    formatDuration(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${minutes}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    resetToAnalysisResults() {
+        // Reset UI state
+        this.elements.videoUploadStatus.style.display = 'none';
+        this.elements.videoAnalysisResults.style.display = 'block';
+        this.elements.continueToProcessingBtn.disabled = false;
+        this.elements.continueToProcessingBtn.textContent = 'Continue to Content Extraction';
     }
 
     async handleFileSelect(file) {

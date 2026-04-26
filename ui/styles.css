@@ -619,6 +619,62 @@ body::before {
     }
 }
 
+/* Phase 3 Processing Results */
+.processing-results {
+    margin-top: 1rem;
+}
+
+.result-section {
+    background: var(--surface-dark);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    border-left: 4px solid var(--primary-blue);
+}
+
+.result-section h5 {
+    color: var(--primary-blue);
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.script-preview {
+    background: var(--surface-dark);
+    padding: 1rem;
+    border-radius: 8px;
+    border-left: 4px solid var(--accent-gold);
+}
+
+.script-preview h5 {
+    color: var(--accent-gold);
+    margin-bottom: 0.75rem;
+}
+
+.script-segments {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.script-segment-preview {
+    padding: 0.75rem;
+    background: var(--surface-darker);
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+}
+
+.script-segment-preview strong {
+    color: var(--text-primary);
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.script-segment-preview p {
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin: 0;
+}
+
 /* Buttons */
 .process-btn, .export-btn {
     background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-orange) 100%);

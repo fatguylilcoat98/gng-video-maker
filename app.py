@@ -463,6 +463,111 @@ def get_video_analysis(job_id):
 
     return jsonify(job["result"])
 
+def process_video_content_background(job_id, video_path, analysis_data, title):
+    """Background function for Steps 3-4: Auto-trim and script generation"""
+    try:
+        logger.info(f"Starting video content processing for job {job_id}")
+
+        processing_jobs[job_id]["progress"] = 30
+        processing_jobs[job_id]["message"] = "Auto-trimming dead space and long pauses..."
+
+        # Import processor here to avoid startup issues
+        from modules.video_analyzer import process_video_content
+
+        # Run Steps 3-4
+        processing_result = run_async_task(process_video_content, video_path, analysis_data, title)
+
+        processing_jobs[job_id]["progress"] = 60
+        processing_jobs[job_id]["message"] = "Generating narration script with Claude..."
+
+        # Complete processing
+        processing_jobs[job_id]["progress"] = 100
+        processing_jobs[job_id]["status"] = "completed"
+        processing_jobs[job_id]["message"] = "Video processing complete!"
+        processing_jobs[job_id]["result"] = {
+            "processing": processing_result,
+            "phase": "ready_for_final_steps"
+        }
+
+        logger.info(f"Video content processing completed for job {job_id}")
+
+    except Exception as e:
+        logger.error(f"Error processing video content for job {job_id}: {str(e)}")
+        processing_jobs[job_id]["status"] = "failed"
+        processing_jobs[job_id]["message"] = f"Video processing failed: {str(e)}"
+
+@app.route("/process-video-content", methods=["POST"])
+def process_video_content_endpoint():
+    """Phase 3 Steps 3-4: Auto-trim video and generate narration script"""
+
+    if not request.is_json:
+        abort(400, "Request must be JSON")
+
+    data = request.get_json()
+
+    # Get required data
+    analysis_job_id = data.get("analysis_job_id")
+    title = data.get("title", "Video Presentation")
+
+    if not analysis_job_id or analysis_job_id not in processing_jobs:
+        abort(400, "Invalid or missing analysis job ID")
+
+    analysis_job = processing_jobs[analysis_job_id]
+    if analysis_job["status"] != "completed":
+        abort(400, "Analysis job not completed")
+
+    try:
+        # Get analysis data and video path
+        analysis_data = analysis_job["result"]["analysis"]
+        video_path = analysis_job["result"]["video_path"]
+
+        # Create processing job
+        job_id = f"process_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+
+        # Initialize job tracking
+        processing_jobs[job_id] = create_processing_status(
+            job_id=job_id,
+            status="processing",
+            progress=0,
+            message="Starting video content processing..."
+        )
+
+        # Start background processing
+        thread = threading.Thread(
+            target=process_video_content_background,
+            args=(job_id, video_path, analysis_data, title)
+        )
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            "job_id": job_id,
+            "status": "processing",
+            "message": "Video content processing started",
+            "processing_url": f"/video-processing/{job_id}"
+        })
+
+    except Exception as e:
+        logger.error(f"Error starting video content processing: {str(e)}")
+        abort(500, f"Failed to start processing: {str(e)}")
+
+@app.route("/video-processing/<job_id>", methods=["GET"])
+def get_video_processing_status(job_id):
+    """Get video content processing status and results"""
+    if job_id not in processing_jobs:
+        abort(404, "Processing job not found")
+
+    job = processing_jobs[job_id]
+    if job["status"] != "completed":
+        # Return current status if not complete
+        return jsonify({
+            "status": job["status"],
+            "progress": job["progress"],
+            "message": job["message"]
+        })
+
+    return jsonify(job["result"])
+
 @app.route("/", methods=["GET"])
 def root():
     """Serve the main UI"""
