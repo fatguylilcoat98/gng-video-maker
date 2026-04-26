@@ -460,6 +460,17 @@ class VideoComposer:
             # Create video with FFmpeg
             video_path = await self.create_video_with_ffmpeg(frame_paths, audio_paths, durations)
 
+            # Move video to permanent location
+            final_video_name = f"video_{uuid.uuid4().hex[:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+            video_dir = "static/videos"
+            os.makedirs(video_dir, exist_ok=True)
+            final_video_path = os.path.join(video_dir, final_video_name)
+
+            # Copy video to permanent location
+            import shutil
+            shutil.move(video_path, final_video_path)
+            logger.info(f"Video moved to permanent location: {final_video_path}")
+
             if progress_callback:
                 await progress_callback("Generating thumbnail...")
 
@@ -470,11 +481,11 @@ class VideoComposer:
                 await progress_callback("Video generation complete!")
 
             # Calculate file size
-            file_size = os.path.getsize(video_path) if os.path.exists(video_path) else 0
+            file_size = os.path.getsize(final_video_path) if os.path.exists(final_video_path) else 0
 
             return {
-                "video_url": f"/download-video/{os.path.basename(video_path)}",
-                "video_path": video_path,  # For internal use
+                "video_url": f"/download-video/{final_video_name}",
+                "video_path": final_video_path,  # For internal use
                 "thumbnail_url": f"/static/thumbnails/{os.path.basename(thumbnail_path)}" if thumbnail_path else "/static/assets/gng-logo.png",
                 "thumbnail_path": thumbnail_path,  # For internal use
                 "duration": sum(durations),
