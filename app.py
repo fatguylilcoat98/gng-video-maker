@@ -801,40 +801,62 @@ def debug_voice():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/debug/test-voice", methods=["POST"])
+@app.route("/debug/test-voice", methods=["GET", "POST"])
 def test_voice_generation():
     """Test voice generation with a simple segment"""
     try:
-        from modules.voice_generator import generate_voice
-        from simple_schemas import PresentationSegment
-        import asyncio
+        import os
 
-        # Create a test segment
-        test_segment = PresentationSegment(
-            id="test_001",
-            title="Test Voice Generation",
-            narration_text="This is a test of the voice generation system using ElevenLabs API.",
-            type="test",
-            emphasis_level=3
-        )
+        # First check environment
+        api_key = os.getenv("ELEVENLABS_API_KEY")
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID")
 
-        # Run voice generation
-        async def test_voice():
-            try:
-                result = await generate_voice([test_segment], "professional")
-                return result
-            except Exception as e:
-                return {"error": str(e)}
+        debug_info = {
+            "api_key_set": bool(api_key),
+            "api_key_length": len(api_key) if api_key else 0,
+            "voice_id_set": bool(voice_id),
+            "voice_id": voice_id if voice_id else "not_set",
+            "test_status": "starting"
+        }
 
-        result = run_async_task(test_voice)
+        if not api_key:
+            debug_info["error"] = "ELEVENLABS_API_KEY not found"
+            return jsonify(debug_info)
 
-        return jsonify({
-            "status": "test_completed",
-            "result": [{"segment_id": seg.segment_id, "audio_url": seg.audio_url, "duration": seg.duration} for seg in result] if hasattr(result[0], 'segment_id') else result
-        })
+        # Try to import and test
+        try:
+            from modules.voice_generator import generate_voice
+            debug_info["import_success"] = True
+        except Exception as e:
+            debug_info["import_error"] = str(e)
+            return jsonify(debug_info)
+
+        try:
+            from simple_schemas import PresentationSegment
+            debug_info["schema_import_success"] = True
+        except Exception as e:
+            debug_info["schema_import_error"] = str(e)
+            return jsonify(debug_info)
+
+        # Create test segment
+        try:
+            test_segment = PresentationSegment(
+                id="test_001",
+                title="Test Voice Generation",
+                narration_text="This is a test.",
+                type="test",
+                emphasis_level=3
+            )
+            debug_info["segment_created"] = True
+        except Exception as e:
+            debug_info["segment_error"] = str(e)
+            return jsonify(debug_info)
+
+        debug_info["status"] = "ready_to_test"
+        return jsonify(debug_info)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)})
 
 # Serve static files
 @app.route("/static/<path:filename>")
