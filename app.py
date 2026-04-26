@@ -783,13 +783,16 @@ def debug_voice():
         debug_info = {
             "elevenlabs_api_key_set": bool(os.getenv("ELEVENLABS_API_KEY")),
             "elevenlabs_api_key_length": len(os.getenv("ELEVENLABS_API_KEY", "")),
+            "elevenlabs_voice_id_set": bool(os.getenv("ELEVENLABS_VOICE_ID")),
+            "elevenlabs_voice_id": os.getenv("ELEVENLABS_VOICE_ID", "not_set"),
         }
 
         # Test voice generation setup
         try:
-            from modules.voice_generator import ELEVENLABS_API_KEY, ELEVENLABS_API_URL
+            from modules.voice_generator import ELEVENLABS_API_KEY, ELEVENLABS_API_URL, CUSTOM_VOICE_ID
             debug_info["voice_module_api_key_set"] = bool(ELEVENLABS_API_KEY)
             debug_info["voice_module_api_url"] = ELEVENLABS_API_URL
+            debug_info["voice_module_custom_voice_id"] = CUSTOM_VOICE_ID or "not_set"
         except Exception as e:
             debug_info["voice_module_error"] = str(e)
 

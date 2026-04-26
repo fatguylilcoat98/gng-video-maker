@@ -23,7 +23,10 @@ logger = logging.getLogger(__name__)
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1"
 
-# Voice ID mappings for different styles
+# Custom voice ID from environment (preferred) or fallback to defaults
+CUSTOM_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+
+# Voice ID mappings for different styles (fallbacks if no custom voice ID)
 VOICE_MAPPINGS = {
     VoiceStyle.PROFESSIONAL: "21m00Tcm4TlvDq8ikWAM",  # Rachel
     VoiceStyle.CONVERSATIONAL: "AZnzlk1XvdvUeBnXmlld",  # Domi
@@ -44,6 +47,8 @@ async def generate_voice(
     if not ELEVENLABS_API_KEY:
         logger.warning("ELEVENLABS_API_KEY not found, creating mock voice segments")
         return create_mock_voice_segments(segments)
+
+    logger.info(f"Using ElevenLabs API with {'custom' if CUSTOM_VOICE_ID else 'default'} voice ID")
 
     voice_segments = []
 
@@ -73,7 +78,13 @@ async def generate_segment_voice(
     """
     Generate voice for a single segment
     """
-    voice_id = VOICE_MAPPINGS.get(voice_style, VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
+    # Use custom voice ID if provided, otherwise use style mappings
+    if CUSTOM_VOICE_ID:
+        voice_id = CUSTOM_VOICE_ID
+        logger.info(f"Using custom voice ID: {voice_id}")
+    else:
+        voice_id = VOICE_MAPPINGS.get(voice_style, VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
+        logger.info(f"Using default voice ID for {voice_style}: {voice_id}")
 
     # Configure voice settings based on segment type and emphasis
     voice_config = get_voice_config(segment, voice_style)
@@ -108,7 +119,10 @@ async def generate_segment_voice(
             if response.status_code != 200:
                 error_text = response.text
                 logger.error(f"ElevenLabs API error {response.status_code}: {error_text}")
-                raise Exception(f"ElevenLabs API error: {response.status_code}")
+                logger.error(f"Request URL: {url}")
+                logger.error(f"Voice ID used: {voice_id}")
+                logger.error(f"Text length: {len(segment.narration_text)} characters")
+                raise Exception(f"ElevenLabs API error: {response.status_code} - {error_text}")
 
             # Save audio file
             audio_filename = f"audio_{segment.id}_{uuid.uuid4().hex[:8]}.mp3"
