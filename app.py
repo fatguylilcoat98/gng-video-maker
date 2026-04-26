@@ -838,16 +838,31 @@ def test_voice_generation():
             debug_info["schema_import_error"] = str(e)
             return jsonify(debug_info)
 
-        # Create test segment
+        # Create test segment with all required fields
         try:
             test_segment = PresentationSegment(
                 id="test_001",
-                title="Test Voice Generation",
-                narration_text="This is a test.",
                 type="test",
+                title="Test Voice Generation",
+                content="Test content for voice generation",
+                narration_text="This is a test of ElevenLabs voice generation.",
+                visual_cues=["text"],
+                timing={"start": 0.0, "duration": 3.0},
                 emphasis_level=3
             )
             debug_info["segment_created"] = True
+
+            # Now try voice generation
+            async def test_voice():
+                try:
+                    result = await generate_voice([test_segment], "professional")
+                    return {"success": True, "segments": len(result), "first_audio_url": result[0].audio_url if result else None}
+                except Exception as e:
+                    return {"error": str(e), "success": False}
+
+            voice_result = run_async_task(test_voice)
+            debug_info["voice_generation"] = voice_result
+
         except Exception as e:
             debug_info["segment_error"] = str(e)
             return jsonify(debug_info)
