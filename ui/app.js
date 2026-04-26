@@ -215,7 +215,17 @@ class VideoMaker {
             const status = await response.json();
 
             this.updateProgress(status.progress);
-            this.elements.statusMessage.textContent = status.message;
+
+            // Check for summarization and add special styling
+            if (status.message.toLowerCase().includes('summarizing')) {
+                this.elements.statusMessage.innerHTML = `<span class="summary-indicator">🧠</span> ${status.message}`;
+                this.elements.statusMessage.classList.add('summary-mode');
+                this.showSummaryInfo();
+            } else {
+                this.elements.statusMessage.textContent = status.message;
+                this.elements.statusMessage.classList.remove('summary-mode');
+                this.hideSummaryInfo();
+            }
 
             if (status.status === 'completed') {
                 this.loadPresentation(`/presentation/${this.currentJobId}`);
@@ -428,6 +438,7 @@ class VideoMaker {
     hideStatusSection() {
         this.elements.statusSection.style.display = 'none';
         this.setProcessingState(false);
+        this.hideSummaryInfo();
     }
 
     showPresenterSection() {
@@ -438,6 +449,42 @@ class VideoMaker {
         this.setProcessingState(false);
         alert(message); // Replace with better error UI later
         console.error(message);
+    }
+
+    showSummaryInfo() {
+        // Create or show summary info card
+        let infoCard = document.querySelector('.summary-info-card');
+        if (!infoCard) {
+            infoCard = document.createElement('div');
+            infoCard.className = 'summary-info-card';
+            infoCard.innerHTML = `
+                <div class="summary-info-content">
+                    <div class="summary-info-header">
+                        <span class="summary-info-icon">📝</span>
+                        <span class="summary-info-title">Content Summarization</span>
+                    </div>
+                    <p class="summary-info-text">
+                        Your transcript is longer than optimal for the selected video format.
+                        We're extracting the 5 most important moments to create an engaging video.
+                    </p>
+                </div>
+            `;
+
+            // Insert after status section
+            const statusSection = this.elements.statusSection;
+            statusSection.parentNode.insertBefore(infoCard, statusSection.nextSibling);
+        }
+
+        infoCard.style.display = 'block';
+        setTimeout(() => infoCard.classList.add('visible'), 100);
+    }
+
+    hideSummaryInfo() {
+        const infoCard = document.querySelector('.summary-info-card');
+        if (infoCard) {
+            infoCard.classList.remove('visible');
+            setTimeout(() => infoCard.style.display = 'none', 300);
+        }
     }
 
     // Export Functions

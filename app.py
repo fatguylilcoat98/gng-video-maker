@@ -56,11 +56,21 @@ def process_transcript_background(job_id, transcript, title, voice_style, video_
     try:
         logger.info(f"Starting transcript processing for job {job_id}")
 
+        # Progress callback for transcript processing
+        async def transcript_progress_callback(message):
+            processing_jobs[job_id]["message"] = message
+            if "summarizing" in message.lower():
+                processing_jobs[job_id]["progress"] = 10
+            elif "summarization complete" in message.lower():
+                processing_jobs[job_id]["progress"] = 20
+            elif "analyzing" in message.lower():
+                processing_jobs[job_id]["progress"] = 20
+
         # Step 1: Process transcript into structured segments
         processing_jobs[job_id]["progress"] = 20
         processing_jobs[job_id]["message"] = "Analyzing transcript structure..."
 
-        segments = run_async_task(process_transcript, transcript, title, video_mode)
+        segments = run_async_task(process_transcript, transcript, title, video_mode, transcript_progress_callback)
 
         # Step 2: Generate voice narration for each segment
         processing_jobs[job_id]["progress"] = 50

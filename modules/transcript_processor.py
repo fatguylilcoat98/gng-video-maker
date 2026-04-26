@@ -17,6 +17,10 @@ from modules.llm_utils import call_anthropic_api
 
 logger = logging.getLogger(__name__)
 
+# Estimation constants for transcript length detection
+WORDS_PER_MINUTE = 150
+BUFFER_FACTOR = 1.2  # Add 20% buffer for natural pauses
+
 TRANSCRIPT_ANALYSIS_PROMPT = """
 Analyze this transcript and break it into a polished presentation structure suitable for video narration.
 
@@ -75,7 +79,28 @@ Guidelines:
 - Write narration as if speaking directly to the viewer
 """
 
-async def process_transcript(transcript: str, title: Optional[str] = None, video_mode: str = "standard") -> List[PresentationSegment]:
+SUMMARIZATION_PROMPT = """
+This transcript is too long for the selected video format. Extract the 5 MOST IMPORTANT and IMPACTFUL moments that would make the best video content.
+
+ORIGINAL TRANSCRIPT:
+{transcript}
+
+TARGET FORMAT: {video_mode}
+{mode_info}
+
+Your task:
+1. Identify the 5 most engaging, valuable, or surprising moments
+2. Focus on content that would hook viewers and provide real value
+3. Each moment should be substantial enough for a video segment
+4. Preserve the essence and impact of each moment
+5. Maintain the speaker's voice and key insights
+
+Return ONLY the 5 selected moments as a clean, flowing summary. Write each moment as a complete thought that can stand alone. Do not add commentary or explanations - just the essential content from those 5 key moments.
+
+Format as one continuous text with the 5 moments flowing naturally together.
+"""
+
+async def process_transcript(transcript: str, title: Optional[str] = None, video_mode: str = "standard", progress_callback=None) -> List[PresentationSegment]:
     """
     Process a raw transcript into structured presentation segments
     """
@@ -86,6 +111,20 @@ async def process_transcript(transcript: str, title: Optional[str] = None, video
 
     # Clean and prepare transcript
     cleaned_transcript = clean_transcript(transcript)
+
+    # Check if summarization is needed
+    if needs_summarization(cleaned_transcript, video_mode):
+        if progress_callback:
+            await progress_callback("Long content detected — summarizing to key moments...")
+
+        logger.info("Transcript too long, running summarization")
+        cleaned_transcript = await summarize_transcript(cleaned_transcript, video_mode)
+
+        if progress_callback:
+            await progress_callback("Summarization complete — analyzing structure...")
+    else:
+        if progress_callback:
+            await progress_callback("Analyzing transcript structure...")
 
     # Get mode-specific constraints
     mode_constraints = get_mode_constraints(video_mode)
@@ -258,3 +297,55 @@ def estimate_narration_duration(text: str) -> float:
     word_count = len(text.split())
     duration = (word_count / 150) * 60  # Convert to seconds
     return round(duration, 1)
+
+def estimate_transcript_duration(transcript: str) -> float:
+    """
+    Estimate total video duration for a transcript
+    """
+    word_count = len(transcript.split())
+    # Convert to seconds and add buffer for pauses
+    duration = (word_count / WORDS_PER_MINUTE) * 60 * BUFFER_FACTOR
+    return round(duration, 1)
+
+def needs_summarization(transcript: str, video_mode: str) -> bool:
+    """
+    Check if transcript needs summarization based on estimated duration
+    """
+    estimated_duration = estimate_transcript_duration(transcript)
+
+    if video_mode == "shorts":
+        return estimated_duration > 60  # 60 seconds max for shorts
+    else:
+        return estimated_duration > 180  # 180 seconds (3 minutes) max for standard
+
+async def summarize_transcript(transcript: str, video_mode: str) -> str:
+    """
+    Use Claude to summarize transcript to key moments
+    """
+    logger.info(f"Summarizing long transcript for {video_mode} mode")
+
+    mode_info = ""
+    if video_mode == "shorts":
+        mode_info = "Optimizing for 60-second mobile video format. Focus on the most engaging, hook-worthy moments."
+    else:
+        mode_info = "Optimizing for 3-minute presentation format. Focus on substantial insights and key takeaways."
+
+    prompt = SUMMARIZATION_PROMPT.format(
+        transcript=transcript,
+        video_mode=video_mode,
+        mode_info=mode_info
+    )
+
+    try:
+        summary = await call_anthropic_api(prompt, max_tokens=3000, temperature=0.3)
+        logger.info("Transcript summarization completed")
+        return summary.strip()
+
+    except Exception as e:
+        logger.error(f"Summarization failed: {e}")
+        # Fallback: take first portion of transcript
+        words = transcript.split()
+        fallback_length = 300 if video_mode == "standard" else 150  # Rough word limits
+        fallback_summary = " ".join(words[:fallback_length])
+        logger.warning("Using fallback truncation instead of summarization")
+        return fallback_summary
