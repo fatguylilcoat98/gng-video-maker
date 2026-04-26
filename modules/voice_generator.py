@@ -92,7 +92,11 @@ async def generate_segment_voice(
         voice_id = custom_voice_id
         logger.info(f"Using custom voice ID: {voice_id}")
     else:
-        voice_id = VOICE_MAPPINGS.get(voice_style, VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
+        # Fix: Handle both string and enum voice styles
+        if isinstance(voice_style, str):
+            voice_id = VOICE_MAPPINGS.get(voice_style, VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
+        else:
+            voice_id = VOICE_MAPPINGS.get(voice_style, VOICE_MAPPINGS[VoiceStyle.PROFESSIONAL])
         logger.info(f"Using default voice ID for {voice_style}: {voice_id}")
 
     # Configure voice settings based on segment type and emphasis
@@ -133,6 +137,19 @@ async def generate_segment_voice(
                 logger.error(f"Text length: {len(segment.narration_text)} characters")
                 raise Exception(f"ElevenLabs API error: {response.status_code} - {error_text}")
 
+            # Validate response contains actual audio data
+            if len(response.content) < 1000:  # MP3 files should be at least 1KB
+                logger.error(f"ElevenLabs API returned suspiciously small response: {len(response.content)} bytes")
+                logger.error(f"Response content preview: {response.content[:200]}")
+                raise Exception(f"ElevenLabs API returned invalid audio data: {len(response.content)} bytes")
+
+            # Check content type
+            content_type = response.headers.get('Content-Type', '')
+            if 'audio' not in content_type.lower() and 'mpeg' not in content_type.lower():
+                logger.error(f"ElevenLabs API returned non-audio content type: {content_type}")
+                logger.error(f"Response content preview: {response.content[:200]}")
+                raise Exception(f"ElevenLabs API returned non-audio content: {content_type}")
+
             # Save audio file
             audio_filename = f"audio_{segment.id}_{uuid.uuid4().hex[:8]}.mp3"
             audio_path = f"static/audio/{audio_filename}"
@@ -143,8 +160,14 @@ async def generate_segment_voice(
             async with aiofiles.open(audio_path, "wb") as f:
                 await f.write(response.content)
 
-                # Estimate duration (rough calculation based on text length)
-                estimated_duration = estimate_audio_duration(segment.narration_text)
+            # Validate saved file
+            if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+                raise Exception(f"Failed to save audio file or file is empty: {audio_path}")
+
+            logger.info(f"Successfully created ElevenLabs audio: {audio_path} ({os.path.getsize(audio_path)} bytes)")
+
+            # Estimate duration (rough calculation based on text length)
+            estimated_duration = estimate_audio_duration(segment.narration_text)
 
                 return VoiceSegment(
                     segment_id=segment.id,
@@ -256,27 +279,37 @@ def create_mock_voice_segment(segment: PresentationSegment) -> VoiceSegment:
         # Calculate duration
         duration = estimate_audio_duration(segment.narration_text)
 
-        # Create silent audio file using FFmpeg
+        # Create valid audio file using FFmpeg with proper format
         # Only create if file doesn't already exist
         if not os.path.exists(audio_path):
             logger.info(f"Creating mock audio file: {audio_path} ({duration}s)")
 
             cmd = [
-                "ffmpeg", "-f", "lavfi", "-i", f"anullsrc=r=22050",
-                "-t", str(duration), "-acodec", "mp3", "-y", audio_path
+                "ffmpeg", "-f", "lavfi", "-i", f"anullsrc=channel_layout=stereo:sample_rate=22050",
+                "-t", str(duration), "-acodec", "mp3", "-ar", "22050", "-ac", "2", "-y", audio_path
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
             if result.returncode != 0:
-                logger.warning(f"Failed to create mock audio file: {result.stderr}")
-                # Fallback: create a very short file
+                logger.error(f"Failed to create mock audio file: {result.stderr}")
+                logger.error(f"FFmpeg command: {' '.join(cmd)}")
+                # Fallback: create a minimal valid file
                 duration = 1.0
                 cmd = [
-                    "ffmpeg", "-f", "lavfi", "-i", f"anullsrc=r=22050",
-                    "-t", "1", "-acodec", "mp3", "-y", audio_path
+                    "ffmpeg", "-f", "lavfi", "-i", f"anullsrc=channel_layout=stereo:sample_rate=22050",
+                    "-t", "1", "-acodec", "mp3", "-ar", "22050", "-ac", "2", "-y", audio_path
                 ]
-                subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    logger.error(f"Fallback mock audio creation also failed: {result.stderr}")
+                    raise Exception(f"Cannot create mock audio file: {result.stderr}")
+
+            # Validate the file was created and has content
+            if os.path.exists(audio_path) and os.path.getsize(audio_path) > 0:
+                logger.info(f"Successfully created mock audio file: {audio_path} ({os.path.getsize(audio_path)} bytes)")
+            else:
+                raise Exception(f"Mock audio file creation failed or file is empty: {audio_path}")
 
         return VoiceSegment(
             segment_id=segment.id,

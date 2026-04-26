@@ -570,7 +570,7 @@ class VideoComposer:
                         pix_fmt='yuv420p',
                         r=VIDEO_FPS,
                         s=f'{self.width}x{self.height}',
-                        shortest=None
+                        shortest=True
                     ).overwrite_output()
 
                     self.run_ffmpeg_command_safe(cmd, f"Segment {i+1} video creation")
