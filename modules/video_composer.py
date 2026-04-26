@@ -605,8 +605,7 @@ class VideoComposer:
                             acodec='aac',
                             pix_fmt='yuv420p',
                             r=VIDEO_FPS,
-                            s=f'{self.width}x{self.height}',
-                            shortest=True
+                            s=f'{self.width}x{self.height}'
                         ).overwrite_output()
 
                         logger.info(f"About to run FFmpeg for segment {i+1}")
