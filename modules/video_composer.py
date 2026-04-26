@@ -98,6 +98,27 @@ class VideoComposer:
 
         logger.info(f"Validated {file_type} file: {file_path} ({file_size} bytes)")
 
+    def get_actual_audio_duration(self, audio_path: str) -> float:
+        """Get the actual duration of an audio file using FFmpeg"""
+        try:
+            # Use FFmpeg probe to get exact duration
+            result = subprocess.run([
+                "ffprobe", "-v", "quiet", "-show_entries",
+                "format=duration", "-of", "csv=p=0", audio_path
+            ], capture_output=True, text=True, timeout=10)
+
+            if result.returncode == 0:
+                duration = float(result.stdout.strip())
+                logger.info(f"Actual audio duration for {audio_path}: {duration:.2f}s")
+                return duration
+            else:
+                logger.warning(f"Could not get audio duration for {audio_path}, using fallback")
+                return 3.0  # Fallback duration
+
+        except Exception as e:
+            logger.warning(f"Error getting audio duration: {e}, using fallback")
+            return 3.0  # Fallback duration
+
     def run_ffmpeg_command_safe(self, ffmpeg_cmd, description: str):
         """Run FFmpeg command with comprehensive error handling"""
         try:
@@ -343,6 +364,141 @@ class VideoComposer:
 
         return frame_path
 
+    def create_enhanced_segment_frame(self, segment_dict: Dict, segment_number: int, duration: float) -> str:
+        """Create enhanced frame with dynamic content and better visuals"""
+        img = Image.new('RGB', (self.width, self.height), self.hex_to_rgb(BACKGROUND_COLOR))
+        draw = ImageDraw.Draw(img)
+
+        # Add subtle background pattern
+        self.add_background_pattern(img)
+
+        # Determine colors based on segment type and emphasis
+        if segment_dict.get("type") == "introduction":
+            accent_color = ACCENT_GOLD
+            bg_accent = "#1a1520"
+        elif segment_dict.get("type") == "conclusion":
+            accent_color = ACCENT_GREEN
+            bg_accent = "#0f1a15"
+        elif segment_dict.get("emphasis_level", 3) >= 4:
+            accent_color = ACCENT_GREEN
+            bg_accent = "#0f1a15"
+        else:
+            accent_color = ACCENT_GOLD
+            bg_accent = "#1a1520"
+
+        # Add colored background accent
+        accent_height = 200 if self.video_mode == "standard" else 300
+        draw.rectangle([0, 0, self.width, accent_height], fill=self.hex_to_rgb(bg_accent))
+
+        # Segment indicator (top-right)
+        indicator_font = self.get_font("mono")
+        indicator_text = f"{segment_number}"
+        indicator_size = 80 if self.video_mode == "standard" else 100
+
+        # Draw circle indicator
+        circle_x = self.width - 120
+        circle_y = 60
+        circle_radius = 30 if self.video_mode == "standard" else 40
+        draw.ellipse([circle_x - circle_radius, circle_y - circle_radius,
+                     circle_x + circle_radius, circle_y + circle_radius],
+                     fill=self.hex_to_rgb(accent_color))
+
+        # Center number in circle
+        bbox = draw.textbbox((0, 0), indicator_text, font=indicator_font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        text_x = circle_x - text_width // 2
+        text_y = circle_y - text_height // 2
+        draw.text((text_x, text_y), indicator_text, font=indicator_font, fill=self.hex_to_rgb(BACKGROUND_COLOR))
+
+        # Main title with better positioning
+        title = segment_dict.get("title", f"Point {segment_number}")
+        title_font = self.get_font("title") if len(title) < 20 else self.get_font("main")
+
+        if self.video_mode == "shorts":
+            title_y = accent_height + 80
+            max_title_width = self.width - 80
+        else:
+            title_y = accent_height + 100
+            max_title_width = self.width - 200
+
+        self.draw_text_centered(draw, title, title_y, title_font, accent_color, max_width=max_title_width)
+
+        # Key points from narration (extract main ideas)
+        narration = segment_dict.get("narration_text", "")
+        key_points = self.extract_key_points(narration)
+
+        # Draw key points as bullet points
+        if key_points:
+            bullet_font = self.get_font("subtitle")
+            bullet_y_start = title_y + 120 if self.video_mode == "standard" else title_y + 160
+            bullet_spacing = 60 if self.video_mode == "standard" else 80
+
+            for i, point in enumerate(key_points[:3]):  # Max 3 key points
+                bullet_y = bullet_y_start + (i * bullet_spacing)
+                bullet_x = 100 if self.video_mode == "standard" else 60
+
+                # Draw bullet
+                draw.ellipse([bullet_x - 8, bullet_y + 20, bullet_x + 8, bullet_y + 36],
+                           fill=self.hex_to_rgb(accent_color))
+
+                # Draw point text
+                point_text = point[:80] + "..." if len(point) > 80 else point
+                draw.text((bullet_x + 30, bullet_y), point_text, font=bullet_font, fill=self.hex_to_rgb(TEXT_COLOR))
+
+        # Add progress bar at bottom
+        progress_height = 8
+        progress_y = self.height - 40
+        progress_width = self.width - 200
+        progress_x = 100
+
+        # Background bar
+        draw.rectangle([progress_x, progress_y, progress_x + progress_width, progress_y + progress_height],
+                      fill=self.hex_to_rgb(TEXT_MUTED))
+
+        # Calculate progress (rough estimate based on segment number)
+        total_segments = 5  # Rough estimate
+        progress = segment_number / total_segments
+        filled_width = int(progress_width * min(progress, 1.0))
+
+        if filled_width > 0:
+            draw.rectangle([progress_x, progress_y, progress_x + filled_width, progress_y + progress_height],
+                          fill=self.hex_to_rgb(accent_color))
+
+        # Save frame
+        frame_path = tempfile.mktemp(suffix='.png')
+        img.save(frame_path)
+        self.temp_files.append(frame_path)
+
+        return frame_path
+
+    def add_background_pattern(self, img: Image.Image):
+        """Add subtle background pattern for visual interest"""
+        draw = ImageDraw.Draw(img)
+
+        # Add subtle dots pattern
+        dot_color = self.hex_to_rgb("#1a1a1f")
+        spacing = 60
+
+        for y in range(0, self.height, spacing):
+            for x in range(0, self.width, spacing):
+                if (x + y) % 120 == 0:  # Only some dots
+                    draw.ellipse([x-2, y-2, x+2, y+2], fill=dot_color)
+
+    def extract_key_points(self, narration: str) -> List[str]:
+        """Extract key points from narration text"""
+        # Clean the text
+        clean_text = self.clean_markdown(narration)
+
+        # Split into sentences
+        sentences = [s.strip() for s in clean_text.split('.') if s.strip()]
+
+        # Filter for meaningful sentences (not too short)
+        key_points = [s for s in sentences if len(s.split()) >= 4 and len(s) <= 100]
+
+        # Return top 3 points
+        return key_points[:3]
+
     def clean_markdown(self, text: str) -> str:
         """Strip markdown formatting from text"""
         import re
@@ -419,15 +575,24 @@ class VideoComposer:
                     logger.warning(f"No voice segment found for {segment['id']}")
                     continue
 
-                logger.info(f"Voice segment duration: {voice_segment['duration']:.2f}s")
+                # Get actual audio duration from file instead of estimate
+                audio_url = voice_segment["audio_url"]
+                if audio_url.startswith("/static/"):
+                    actual_audio_path = audio_url[1:]  # Remove leading slash
+                else:
+                    actual_audio_path = audio_url
 
-                # Create frame
-                frame_path = self.create_segment_frame_from_dict(segment, i + 1)
+                # Get real duration from audio file
+                actual_duration = self.get_actual_audio_duration(actual_audio_path)
+                logger.info(f"Voice segment estimated: {voice_segment['duration']:.2f}s, actual: {actual_duration:.2f}s")
+
+                # Create enhanced frame with better visuals
+                frame_path = self.create_enhanced_segment_frame(segment, i + 1, actual_duration)
                 logger.info(f"Created frame: {frame_path}")
                 self.validate_input_file(frame_path, f"Content frame {i+1}")
 
                 frame_paths.append(frame_path)
-                durations.append(voice_segment["duration"])
+                durations.append(actual_duration)
 
                 # Audio file path (convert URL to local path if needed)
                 audio_url = voice_segment["audio_url"]
