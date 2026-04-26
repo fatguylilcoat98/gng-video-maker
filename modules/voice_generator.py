@@ -169,13 +169,13 @@ async def generate_segment_voice(
             # Estimate duration (rough calculation based on text length)
             estimated_duration = estimate_audio_duration(segment.narration_text)
 
-                return VoiceSegment(
-                    segment_id=segment.id,
-                    audio_url=f"/static/audio/{audio_filename}",
-                    duration=estimated_duration,
-                    voice_settings=voice_config.dict(),
-                    generated_at=datetime.now().isoformat()
-                )
+            return VoiceSegment(
+                segment_id=segment.id,
+                audio_url=f"/static/audio/{audio_filename}",
+                duration=estimated_duration,
+                voice_settings=voice_config.dict(),
+                generated_at=datetime.now().isoformat()
+            )
 
     except Exception as e:
         logger.error(f"Error generating voice for segment {segment.id}: {e}")
